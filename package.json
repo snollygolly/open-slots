@@ -1,0 +1,17 @@
+{
+	"name": "open-slots",
+	"version": "0.1.0",
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "vite build",
+		"preview": "vite preview",
+		"sim": "node ./src/sim/run-sim.js"
+	},
+	"dependencies": {
+		"pixi.js": "^8.12.0"
+	},
+	"devDependencies": {
+		"vite": "^7.1.3"
+	}
+}
