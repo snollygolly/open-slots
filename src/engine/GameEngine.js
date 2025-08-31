@@ -61,13 +61,16 @@ export class GameEngine extends EventBus {
 				feature = "FREE_GAMES";
 			}
 			this.lastWin = totalWin;
-			this.credits = this.wallet.addCredits(totalWin);
-			this.emit("balance", null);
-			const result = { grid, evaln, totalWin, feature, hold, freeGames: this.free.remaining };
+			const result = { grid, evaln, totalWin, feature, hold, freeGames: this.free.remaining, wager };
 			this.emit("spinEnd", result);
 			return result;
 		} finally {
 			this.spinning = false;
 		}
+	}
+	
+	applyWinCredits(result) {
+		this.credits = this.wallet.addCredits(result.totalWin);
+		this.emit("balance", null);
 	}
 }

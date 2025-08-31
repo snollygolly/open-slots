@@ -19,6 +19,7 @@ export class Controls {
 			if (this.engine.spinning) { return; }
 			this.clearWinLog();
 			const result = await this.game.spinAndRender();
+			this.engine.applyWinCredits(result);
 			this.game.showWins(result, this.engine.pathsMode);
 			this.appendWinLog(result);
 			this.update();
@@ -31,6 +32,7 @@ export class Controls {
 				if (this.engine.credits < this.engine.bet) { auto = false; break; }
 				this.clearWinLog();
 				const result = await this.game.spinAndRender();
+				this.engine.applyWinCredits(result);
 				this.game.showWins(result, this.engine.pathsMode);
 				this.appendWinLog(result);
 				this.update();
@@ -41,6 +43,7 @@ export class Controls {
 			const n = 1000; let wagered = 0; let paid = 0; let hits = 0;
 			for (let i = 0; i < n; i += 1) {
 				const r = await this.game.engine.spinOnce();
+				this.engine.applyWinCredits(r);
 				wagered += this.engine.bet; paid += r.totalWin; if (r.totalWin > 0) { hits += 1; }
 			}
 			this.$last.textContent = `Sim RTP ${((paid / wagered) * 100).toFixed(2)}% Hit ${(hits / n * 100).toFixed(1)}%`;
