@@ -46,6 +46,7 @@ export class GameMath {
 		for (let k = 0; k < keys.length; k += 1) {
 			const sym = keys[k];
 			let count = 0;
+			let ways = 1;
 			for (let x = 0; x < grid.reels; x += 1) {
 				let hits = 0;
 				for (let y = 0; y < grid.rows; y += 1) {
@@ -54,10 +55,11 @@ export class GameMath {
 				}
 				if (hits === 0) { break; }
 				count += 1;
+				ways *= hits;
 			}
 			if (count >= 3) {
 				const award = payTable[sym][count] || 0;
-				if (award > 0) { win += award; detail.push({ sym, count, award }); }
+				if (award > 0) { win += award; detail.push({ sym, count, award, ways }); }
 			}
 		}
 		return { lineWin: win, waysDetail: detail, scatters: countScatter(), orbs: orbCount() };

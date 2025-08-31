@@ -17,6 +17,7 @@ export class Controls {
 		engine.on("status", (msg) => { this.$status.textContent = msg; });
 		this.$spin.onclick = async() => {
 			if (this.engine.spinning) { return; }
+			this.clearWinLog();
 			const result = await this.game.spinAndRender();
 			this.game.showWins(result, this.engine.pathsMode);
 			this.appendWinLog(result);
@@ -28,6 +29,7 @@ export class Controls {
 			this.$auto.textContent = auto ? "AUTO: ON" : "AUTO";
 			while (auto) {
 				if (this.engine.credits < this.engine.bet) { auto = false; break; }
+				this.clearWinLog();
 				const result = await this.game.spinAndRender();
 				this.game.showWins(result, this.engine.pathsMode);
 				this.appendWinLog(result);
@@ -61,14 +63,24 @@ export class Controls {
 			this.$meters.appendChild(el);
 		}
 	}
+	clearWinLog() {
+		this.$winlog.innerHTML = "";
+	}
 	appendWinLog(result) {
 		if (!result?.evaln?.waysDetail?.length) { return; }
 		for (let i = 0; i < result.evaln.waysDetail.length; i += 1) {
 			const w = result.evaln.waysDetail[i];
-			const row = document.createElement("div"); row.className = "line";
-			const left = document.createElement("div"); left.textContent = `${w.sym} × ${w.count}`;
-			const right = document.createElement("div"); right.className = "amt"; right.textContent = `+${this.format(w.award)}`;
-			row.appendChild(left); row.appendChild(right); this.$winlog.prepend(row);
+			if (w.ways && w.ways > 1) {
+				const row = document.createElement("div"); row.className = "line";
+				const left = document.createElement("div"); left.textContent = `(${w.ways}x) ${w.sym} × ${w.count}`;
+				const right = document.createElement("div"); right.className = "amt"; right.textContent = `+${this.format(w.award)}`;
+				row.appendChild(left); row.appendChild(right); this.$winlog.prepend(row);
+			} else {
+				const row = document.createElement("div"); row.className = "line";
+				const left = document.createElement("div"); left.textContent = `${w.sym} × ${w.count}`;
+				const right = document.createElement("div"); right.className = "amt"; right.textContent = `+${this.format(w.award)}`;
+				row.appendChild(left); row.appendChild(right); this.$winlog.prepend(row);
+			}
 		}
 		while (this.$winlog.children.length > 20) { this.$winlog.removeChild(this.$winlog.lastChild); }
 	}
