@@ -11,9 +11,7 @@ export const mulberry32 = (seed) => {
 
 export const pickWeighted = (rng, values, weights) => {
 	let sum = 0;
-	for (let i = 0; i < weights.length; i += 1) {
-		sum += weights[i];
-	}
+	for (let i = 0; i < weights.length; i += 1) { sum += weights[i]; }
 	const r = rng() * sum;
 	let c = 0;
 	for (let j = 0; j < weights.length; j += 1) {

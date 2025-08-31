@@ -1,11 +1,7 @@
-import { mulberry32, pickWeighted } from "./util.js";
+import { pickWeighted } from "../core/utils.js";
 
 export class GameMath {
-	constructor(config, seed) {
-		this.config = config;
-		this.rng = mulberry32(seed);
-	}
-
+	constructor(config, rngFn) { this.config = config; this.rng = rngFn; }
 	spinReels() {
 		const { reelStrips, grid } = this.config;
 		const out = [];
@@ -21,16 +17,13 @@ export class GameMath {
 		}
 		return out;
 	}
-
 	evaluateWays(matrix) {
 		const { symbols, payTable, grid } = this.config;
 		const W = symbols.WILD;
 		const SC = symbols.SCATTER;
 		const ORB = symbols.ORB;
-
 		let win = 0;
 		const detail = [];
-
 		const countScatter = () => {
 			let n = 0;
 			for (let x = 0; x < grid.reels; x += 1) {
@@ -40,7 +33,6 @@ export class GameMath {
 			}
 			return n;
 		};
-
 		const orbCount = () => {
 			let n = 0;
 			for (let x = 0; x < grid.reels; x += 1) {
@@ -50,7 +42,6 @@ export class GameMath {
 			}
 			return n;
 		};
-
 		const keys = Object.keys(payTable);
 		for (let k = 0; k < keys.length; k += 1) {
 			const sym = keys[k];
@@ -66,24 +57,15 @@ export class GameMath {
 			}
 			if (count >= 3) {
 				const award = payTable[sym][count] || 0;
-				if (award > 0) {
-					win += award;
-					detail.push({ sym, count, award });
-				}
+				if (award > 0) { win += award; detail.push({ sym, count, award }); }
 			}
 		}
-
 		return { lineWin: win, waysDetail: detail, scatters: countScatter(), orbs: orbCount() };
 	}
-
 	playHoldAndSpin(startingOrbs, bet, contributeJackpot) {
 		const { holdAndSpin, progressives } = this.config;
-		const placed = [];
-		for (let i = 0; i < startingOrbs.length; i += 1) {
-			placed.push(startingOrbs[i]);
-		}
+		const placed = [...startingOrbs];
 		let respins = holdAndSpin.respins;
-
 		while (respins > 0 && placed.length < (this.config.grid.reels * this.config.grid.rows)) {
 			let hit = false;
 			const attempts = Math.floor(1 + this.rng() * 3);
@@ -104,24 +86,16 @@ export class GameMath {
 			}
 			respins = hit ? holdAndSpin.respins : (respins - 1);
 		}
-
 		let sum = 0;
 		const jackpots = {};
 		for (let i = 0; i < placed.length; i += 1) {
 			const p = placed[i];
 			if (p.type === "C") { sum += p.amount; }
-			if (p.type === "JP") {
-				sum += Math.round(p.amount / this.config.denom);
-				jackpots[p.id] = (jackpots[p.id] || 0) + 1;
-			}
+			if (p.type === "JP") { sum += Math.round(p.amount / this.config.denom); jackpots[p.id] = (jackpots[p.id] || 0) + 1; }
 		}
-
 		const full = placed.length >= (this.config.grid.reels * this.config.grid.rows);
 		const grandHit = full && this.config.holdAndSpin.fullGridWinsGrand;
-		if (grandHit) {
-			sum += Math.round(progressives.meta.GRAND.seed / this.config.denom);
-		}
-
+		if (grandHit) { sum += Math.round(progressives.meta.GRAND.seed / this.config.denom); }
 		return { sumCredits: sum, items: placed, full, grandHit, jackpots };
 	}
 }

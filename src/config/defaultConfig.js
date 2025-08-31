@@ -3,7 +3,9 @@ export const defaultConfig = {
 	bet: 100,
 	denom: 0.01,
 	rngSeed: 1337,
-	persistenceKey: "spooky-link-save-v1",
+	persistenceKey: "slot-modular-save-v1",
+	api: { baseUrl: "http://localhost:8787" },
+	services: { useServerRng: false, useServerWallet: false },
 	symbols: {
 		WILD: "WILD",
 		SCATTER: "SCATTER",
