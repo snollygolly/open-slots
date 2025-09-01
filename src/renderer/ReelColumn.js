@@ -1,12 +1,15 @@
-import { Container, Graphics, Text, TextStyle } from "pixi.js";
+import { Container, Graphics, Text, TextStyle, Sprite } from "pixi.js";
+import { getSymbolUrl, getSymbolTexture } from "./SymbolTextures.js";
+import { Assets } from "pixi.js";
 
 const symColors = {
 	WILD: 0xffc107,
 	SCATTER: 0x6ec1ff,
 	ORB: 0xff5252,
 	LANTERN: 0xff9800,
-	COINS: 0xcddc39,
-	COWBOY: 0x9c27b0,
+	FROG: 0xcddc39,
+	GATOR: 0x9c27b0,
+	LILY: 0x4db6ac,
 	A: 0xffffff,
 	K: 0xdedede,
 	Q: 0xbdbdbd,
@@ -50,24 +53,57 @@ export class ReelColumn {
 	}
 
 	makeTile(sym) {
-		const color = symColors[sym] || 0xffffff;
-
-		const cell = new Graphics();
-		cell.roundRect(0, 0, this.cellW - 16, this.cellH - 16, 14);
-		cell.fill({ color, alpha: 0.92 });
-		cell.stroke({ color: 0x031421, width: 4 });
-
-		const label = new Text({
-			text: sym === "ORB" ? "" : sym,
-			style: new TextStyle({ fill: "#031421", fontSize: 20, fontFamily: "system-ui", fontWeight: "700" })
-		});
-		label.anchor.set(0.5);
-		label.x = (this.cellW - 16) / 2;
-		label.y = (this.cellH - 16) / 2;
-
+		// Try to use sprite art for this symbol
+		const url = getSymbolUrl(sym);
 		const wrap = new Container();
-		wrap.addChild(cell);
-		wrap.addChild(label);
+		const maxW = this.cellW - 16;
+		const maxH = this.cellH - 16;
+
+		const existing = getSymbolTexture(sym);
+		if (existing) {
+			const sprite = new Sprite(existing);
+			sprite.anchor.set(0.5);
+			sprite.x = maxW / 2;
+			sprite.y = maxH / 2;
+			const natW = sprite.texture.width || 1;
+			const natH = sprite.texture.height || 1;
+			const scale = Math.min(maxW / natW, maxH / natH);
+			sprite.scale.set(scale, scale);
+			wrap.addChild(sprite);
+		} else if (url) {
+			// Lazy-load via Assets and attach once ready
+			const sprite = new Sprite();
+			sprite.visible = false;
+			wrap.addChild(sprite);
+			Assets.load({ src: url, alias: url }).then((tex) => {
+				sprite.texture = tex;
+				sprite.visible = true;
+				sprite.anchor.set(0.5);
+				sprite.x = maxW / 2;
+				sprite.y = maxH / 2;
+				const natW = tex.width || 1;
+				const natH = tex.height || 1;
+				const scale = Math.min(maxW / natW, maxH / natH);
+				sprite.scale.set(scale, scale);
+			}).catch(() => { /* ignore */ });
+		} else {
+			// Fallback: simple colored tile with label
+			const color = symColors[sym] || 0xffffff;
+			const cell = new Graphics();
+			cell.roundRect(0, 0, this.cellW - 16, this.cellH - 16, 14);
+			cell.fill({ color, alpha: 0.92 });
+			cell.stroke({ color: 0x031421, width: 4 });
+			const label = new Text({
+				text: sym === "ORB" ? "" : sym,
+				style: new TextStyle({ fill: "#031421", fontSize: 20, fontFamily: "system-ui", fontWeight: "700" })
+			});
+			label.anchor.set(0.5);
+			label.x = (this.cellW - 16) / 2;
+			label.y = (this.cellH - 16) / 2;
+			wrap.addChild(cell);
+			wrap.addChild(label);
+		}
+
 		return wrap;
 	}
 

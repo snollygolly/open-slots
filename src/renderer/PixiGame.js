@@ -7,6 +7,7 @@ import { SparkleEmitter } from "./effects/SparkleEmitter.js";
 import { Events } from "../core/events.js";
 import { Layers, setupLayers } from "./Layers.js";
 import { EffectsManager } from "./effects/EffectsManager.js";
+import { preloadSymbolTextures } from "./SymbolTextures.js";
 
 export class PixiGame {
 	constructor(app, engine, config) {
@@ -137,10 +138,14 @@ export class PixiGame {
 				config.symbols
 			);
 
+		// Preload symbol textures, then set initial grid to ensure art is ready
+		this._assetsReady = preloadSymbolTextures();
 		const boot = engine.math.spinReels();
-		for (let i = 0; i < this.cols; i += 1) {
-			this.reels[i].setIdleColumn(boot[i]);
-		}
+		this._assetsReady.then(() => {
+			for (let i = 0; i < this.cols; i += 1) {
+				this.reels[i].setIdleColumn(boot[i]);
+			}
+		});
 
 		/* ORB meter centered above the reels */
 		this.orbMeter = new OrbMeter(this.app, this.stage, 0, 0);

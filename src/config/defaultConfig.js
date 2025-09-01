@@ -9,8 +9,9 @@ export const defaultConfig = {
 		SCATTER: "SCATTER",
 		ORB: "ORB",
 		P1: "LANTERN",
-		P2: "COINS",
-		P3: "COWBOY",
+		P2: "FROG",
+		P3: "GATOR",
+		P4: "LILY",
 		A: "A",
 		K: "K",
 		Q: "Q",
@@ -19,8 +20,9 @@ export const defaultConfig = {
 	},
 	paytable: {
 		LANTERN: [0, 0, 40, 120, 400],
-		COINS: [0, 0, 35, 100, 300],
-		COWBOY: [0, 0, 30, 90, 250],
+		LILY: [0, 0, 40, 120, 400],
+		FROG: [0, 0, 35, 100, 300],
+		GATOR: [0, 0, 30, 90, 250],
 		A: [0, 0, 20, 60, 150],
 		K: [0, 0, 20, 60, 150],
 		Q: [0, 0, 15, 50, 120],
@@ -28,13 +30,13 @@ export const defaultConfig = {
 		T: [0, 0, 10, 40, 100]
 	},
 	reels: [
-		["A","Q","WILD","LANTERN","K","J","A","ORB","Q","COINS","J","T","COWBOY","A","ORB","SCATTER","Q","J","A","K","T","Q","COINS","ORB","A","K","T"],
-		["Q","K","J","LANTERN","A","Q","WILD","COWBOY","K","J","ORB","A","SCATTER","Q","K","J","A","T","Q","ORB","COINS","J","A","T","ORB","Q"],
-		["K","J","A","Q","WILD","COINS","K","J","ORB","Q","T","SCATTER","K","A","Q","J","COWBOY","K","A","ORB","J","T","ORB","K"],
+		["A","Q","WILD","LANTERN","LILY","K","J","A","ORB","Q","FROG","J","T","GATOR","A","ORB","SCATTER","Q","J","A","K","T","Q","FROG","ORB","A","K","T"],
+		["Q","K","J","LANTERN","LILY","A","Q","WILD","GATOR","K","J","ORB","A","SCATTER","Q","K","J","A","T","Q","ORB","FROG","J","A","T","ORB","Q"],
+		["K","J","A","Q","WILD","LILY","FROG","K","J","ORB","Q","T","SCATTER","K","A","Q","J","GATOR","K","A","ORB","J","T","ORB","K"],
 		// Reduce ORB density on reel 4 by 1
-		["J","A","Q","K","WILD","LANTERN","J","Q","K","COINS","SCATTER","J","A","Q","K","T","ORB","J","A","K","ORB","T","J"],
+		["J","A","Q","K","WILD","LANTERN","J","Q","K","FROG","SCATTER","J","A","Q","K","T","ORB","J","A","K","ORB","T","J"],
 		// Slightly reduce ORB density on the last reel (remove one ORB)
-		["A","Q","K","J","WILD","COWBOY","A","ORB","K","J","SCATTER","T","A","Q","K","J","LANTERN","A","K","J","ORB","T","A"]
+		["A","Q","K","J","WILD","GATOR","A","ORB","K","J","SCATTER","T","A","Q","K","J","LANTERN","LILY","A","K","J","ORB","T","A"]
 	],
 	holdAndSpin: {
 		triggerCount: 5,
