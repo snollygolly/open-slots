@@ -1,22 +1,35 @@
-import { EventBus } from "../core/EventBus.js";
+import { BaseFeature } from "../engine/FeatureContracts.js";
+import { Events } from "../core/events.js";
 import { pickWeighted } from "../core/utils.js";
 
-export class HoldAndSpin extends EventBus {
-	constructor(config, rngFn, claimJackpotFn) {
-		super();
+export class HoldAndSpin extends BaseFeature {
+	constructor(config, dependencies = {}) {
+		super(config.holdAndSpin, "HoldAndSpin");
 		this.cfg = config.holdAndSpin;
 		this.gridCfg = config.grid;
-		this.rng = rngFn;
-		this.claimJackpot = claimJackpotFn; // function(id) -> credits
+		this.rng = dependencies.rngFn || (() => Math.random());
+		this.claimJackpot = dependencies.claimJackpotFn || (() => 0);
 		this.respinsRemaining = 0;
 		this.lockedOrbs = [];
-		this.lockedPositions = new Set(); // Track which grid positions are locked
+		this.lockedPositions = new Set();
 		this.totalPositions = this.gridCfg.reels * this.gridCfg.rows;
 	}
 
-	trigger(initialGrid, startingItems) {
+	/** Spend a respin immediately when a respin starts. */
+	spendRespin() {
+		if (!this.isActive()) return this.respinsRemaining;
+		this.respinsRemaining = Math.max(0, this.respinsRemaining - 1);
+		this.emit("tick", { respins: this.respinsRemaining, orbs: this.lockedOrbs.length });
+		return this.respinsRemaining;
+	}
+
+	trigger(triggerData) {
+		const initialGrid = triggerData.grid || triggerData;
+		const startingItems = triggerData.orbItems || triggerData.startingItems;
+		
 		// Start hold and spin with the initial orbs from the grid
 		this.respinsRemaining = this.cfg.respins;
+		this.active = true;
 		this.lockedOrbs = [];
 		this.lockedPositions.clear();
 		
@@ -73,11 +86,10 @@ export class HoldAndSpin extends EventBus {
 
 		if (newOrbCount > 0) {
 			// New orbs found - reset respins
-			this.respinsRemaining = this.cfg.respins; // Reset to 3
+			this.respinsRemaining = this.cfg.respins; // Reset to max on hit
 			this.emit("orbsAdded", { newOrbs: newOrbCount, totalOrbs: this.lockedOrbs.length, respins: this.respinsRemaining });
 		} else {
-			// No new orbs - decrement respins
-			this.respinsRemaining--;
+			// No new orbs - we already spent the respin at spin start
 			this.emit("noOrbs", { respins: this.respinsRemaining });
 		}
 
@@ -111,16 +123,35 @@ export class HoldAndSpin extends EventBus {
 			grandBonus: isFull && this.cfg.fullGridWinsGrand ? 1 : 0
 		};
 
-		// Reset state
+		// Mark feature inactive but keep locked orbs until engine clears them after payout
+		this.active = false;
 		this.respinsRemaining = 0;
-		this.lockedOrbs = [];
 
 		this.emit("complete", result);
 		return result;
 	}
 
+	reset() {
+		// Clear all state so future spins don't show stale labels
+		this.active = false;
+		this.respinsRemaining = 0;
+		this.lockedOrbs = [];
+		this.lockedPositions.clear();
+		super.reset();
+	}
+
+	checkTrigger(spinResult) {
+		const triggerCount = this.cfg.triggerCount || 6;
+		const orbCount = spinResult.evaln?.orbs || 0;
+		
+		return {
+			triggered: orbCount >= triggerCount,
+			data: { orbCount, triggerCount, orbItems: spinResult.evaln?.orbItems }
+		};
+	}
+
 	isActive() {
-		return this.respinsRemaining > 0;
+		return this.active === true;
 	}
 
 	getRemainingRespins() {
@@ -150,5 +181,47 @@ export class HoldAndSpin extends EventBus {
 		}
 		
 		return modifiedGrid;
+	}
+
+	process(spinResult) {
+		if (!this.isActive()) {
+			return { completed: true, totalWin: 0, continueSpin: false, data: {} };
+		}
+
+		const result = this.processRespin(spinResult.grid);
+		
+		if (result) {
+			// Feature completed
+			this.active = false;
+			return {
+				completed: true,
+				totalWin: result.totalWin,
+				continueSpin: false,
+				data: result
+			};
+		} else {
+			// Continue respinning
+			return {
+				completed: false,
+				totalWin: 0,
+				continueSpin: true,
+				data: {
+					respinsRemaining: this.respinsRemaining,
+					orbCount: this.lockedOrbs.length
+				}
+			};
+		}
+	}
+
+	validateConfig() {
+		return (
+			typeof this.cfg.respins === "number" &&
+			typeof this.cfg.triggerCount === "number" &&
+			Array.isArray(this.cfg.creditValues) &&
+			Array.isArray(this.cfg.creditWeights) &&
+			this.cfg.respins > 0 &&
+			this.cfg.triggerCount > 0 &&
+			this.cfg.creditValues.length === this.cfg.creditWeights.length
+		);
 	}
 }

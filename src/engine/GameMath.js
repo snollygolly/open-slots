@@ -3,10 +3,10 @@ import { pickWeighted } from "../core/utils.js";
 export class GameMath {
 	constructor(config, rngFn) { this.config = config; this.rng = rngFn; }
 	spinReels() {
-		const { reelStrips, grid } = this.config;
+		const { reels, grid } = this.config;
 		const out = [];
 		for (let r = 0; r < grid.reels; r += 1) {
-			const strip = reelStrips[r];
+			const strip = reels[r];
 			const start = Math.floor(this.rng() * strip.length);
 			const col = [];
 			for (let y = 0; y < grid.rows; y += 1) {
@@ -18,7 +18,7 @@ export class GameMath {
 		return out;
 	}
 	evaluateWays(matrix) {
-		const { symbols, payTable, grid } = this.config;
+		const { symbols, paytable, grid } = this.config;
 		const W = symbols.WILD;
 		const SC = symbols.SCATTER;
 		const ORB = symbols.ORB;
@@ -59,7 +59,7 @@ export class GameMath {
 			}
 			return n;
 		};
-		const keys = Object.keys(payTable);
+		const keys = Object.keys(paytable);
 		for (let k = 0; k < keys.length; k += 1) {
 			const sym = keys[k];
 			let count = 0;
@@ -75,7 +75,7 @@ export class GameMath {
 				ways *= hits;
 			}
 			if (count >= 3) {
-				const award = payTable[sym][count] || 0;
+				const award = paytable[sym][count] || 0;
 				if (award > 0) { win += award; detail.push({ sym, count, award, ways }); }
 			}
 		}

@@ -4,8 +4,6 @@ export const defaultConfig = {
 	denom: 0.01,
 	rngSeed: 1337,
 	persistenceKey: "slot-modular-save-v1",
-	api: { baseUrl: "http://localhost:8787" },
-	services: { useServerRng: false, useServerWallet: false },
 	symbols: {
 		WILD: "WILD",
 		SCATTER: "SCATTER",
@@ -19,7 +17,7 @@ export const defaultConfig = {
 		J: "J",
 		T: "T"
 	},
-	payTable: {
+	paytable: {
 		LANTERN: [0, 0, 40, 120, 400],
 		COINS: [0, 0, 35, 100, 300],
 		COWBOY: [0, 0, 30, 90, 250],
@@ -29,14 +27,14 @@ export const defaultConfig = {
 		J: [0, 0, 15, 50, 120],
 		T: [0, 0, 10, 40, 100]
 	},
-		reelStrips: [
-		["A","Q","WILD","P1","K","J","A","ORB","Q","P2","J","T","P3","A","ORB","SCATTER","Q","J","A","K","T","Q","P2","ORB","A","K","T"],
-		["Q","K","J","P1","A","Q","WILD","P3","K","J","ORB","A","SCATTER","Q","K","J","A","T","Q","ORB","P2","J","A","T","ORB","Q"],
-		["K","J","A","Q","WILD","P2","K","J","ORB","Q","T","SCATTER","K","A","Q","J","P3","K","A","ORB","J","T","ORB","K"],
+	reels: [
+		["A","Q","WILD","LANTERN","K","J","A","ORB","Q","COINS","J","T","COWBOY","A","ORB","SCATTER","Q","J","A","K","T","Q","COINS","ORB","A","K","T"],
+		["Q","K","J","LANTERN","A","Q","WILD","COWBOY","K","J","ORB","A","SCATTER","Q","K","J","A","T","Q","ORB","COINS","J","A","T","ORB","Q"],
+		["K","J","A","Q","WILD","COINS","K","J","ORB","Q","T","SCATTER","K","A","Q","J","COWBOY","K","A","ORB","J","T","ORB","K"],
 		// Reduce ORB density on reel 4 by 1
-		["J","A","Q","K","WILD","P1","J","Q","K","P2","SCATTER","J","A","Q","K","T","ORB","J","A","K","ORB","T","J"],
+		["J","A","Q","K","WILD","LANTERN","J","Q","K","COINS","SCATTER","J","A","Q","K","T","ORB","J","A","K","ORB","T","J"],
 		// Slightly reduce ORB density on the last reel (remove one ORB)
-		["A","Q","K","J","WILD","P3","A","ORB","K","J","SCATTER","T","A","Q","K","J","P1","A","K","J","ORB","T","A"]
+		["A","Q","K","J","WILD","COWBOY","A","ORB","K","J","SCATTER","T","A","Q","K","J","LANTERN","A","K","J","ORB","T","A"]
 	],
 	holdAndSpin: {
 		triggerCount: 5,
