@@ -131,7 +131,7 @@ export class PixiGame {
 		return result;
 	}
 
-	showWins(result, mode) {
-		this.highlighter.show(result, mode || "paths");
+	showWins(result) {
+		this.highlighter.showPaths(result);
 	}
 }

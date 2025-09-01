@@ -18,7 +18,6 @@ export class GameEngine extends EventBus {
 		this.emit("balance", null);
 		this.emit("progressives", null);
 		this.emit("status", "Ready");
-		this.pathsMode = "paths";
 	}
 	async spinOnce() {
 		if (this.spinning) { return null; }

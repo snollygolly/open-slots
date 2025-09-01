@@ -3,13 +3,9 @@ const symColors = { WILD: 0xffc107, SCATTER: 0x6ec1ff, ORB: 0xff5252, LANTERN: 0
 export class WinHighlighter {
 	constructor(app, layer, offsetX, offsetY, cellW, cellH, cols, rows, symbols) {
 		this.app = app; this.layer = layer; this.offsetX = offsetX; this.offsetY = offsetY; this.cellW = cellW; this.cellH = cellH; this.cols = cols; this.rows = rows; this.symbols = symbols;
-		this._shade = null; this._cyclePaths = []; this._cycleDots = []; this._cycleIndex = 0; this._timer = null; this.mode = "paths";
+		this._shade = null; this._cyclePaths = []; this._cycleDots = []; this._cycleIndex = 0; this._timer = null;
 	}
 	reset() { if (this._timer) { clearTimeout(this._timer); this._timer = null; } this.layer.removeChildren(); this._shade = null; this._cyclePaths = []; this._cycleDots = []; this._cycleIndex = 0; }
-	show(result, mode) {
-		this.reset(); this.mode = mode || "paths"; if (!result?.evaln?.waysDetail?.length) { return; }
-		if (this.mode === "paths") { this.showPaths(result); } else { this.showArea(result); }
-	}
 	anticipationDelays(result, config) {
 		const hsNeed = config.holdAndSpin.triggerCount; const fgNeed = config.freeGames.triggerScatters; const arr = [0, 0, 0, 0, 0]; let orbsSeen = 0; let scattersSeen = 0;
 		for (let x = 0; x < this.cols; x += 1) { for (let y = 0; y < this.rows; y += 1) { const v = result.grid[x][y]; if (v === "ORB") { orbsSeen += 1; } if (v === "SCATTER") { scattersSeen += 1; } }
@@ -17,17 +13,12 @@ export class WinHighlighter {
 		return arr;
 	}
 	showPaths(result) {
+		this.reset(); if (!result?.evaln?.waysDetail?.length) { return; }
 		const matrix = result.grid; const wild = this.symbols.WILD; const winners = []; const usedCells = new Set();
 		for (let i = 0; i < result.evaln.waysDetail.length; i += 1) { const entry = result.evaln.waysDetail[i]; const sym = entry.sym; const count = entry.count; const color = symColors[sym] || 0xffffff; const paths = this.enumerateWays(matrix, sym, wild, count);
 			for (let p = 0; p < paths.length; p += 1) { winners.push({ color, path: paths[p] }); for (let k = 0; k < paths[p].length; k += 1) { const pt = paths[p][k]; usedCells.add(`${pt.x},${pt.y}`); } } }
 		const shade = new Graphics(); for (let x = 0; x < this.cols; x += 1) { for (let y = 0; y < this.rows; y += 1) { if (usedCells.has(`${x},${y}`)) { continue; } const rx = this.offsetX + (x * this.cellW) + 8; const ry = this.offsetY + (y * this.cellH) + 8; shade.roundRect(rx, ry, this.cellW - 16, this.cellH - 16, 14); } }
 		shade.fill({ color: 0x000000, alpha: 0.45 }); this.layer.addChild(shade); this._shade = shade; this._cyclePaths = winners; this._cycleIndex = 0; this.advanceCycle();
-	}
-	showArea(result) {
-		const matrix = result.grid; const wild = this.symbols.WILD; const winners = new Set();
-		for (let i = 0; i < result.evaln.waysDetail.length; i += 1) { const { sym, count } = result.evaln.waysDetail[i]; for (let x = 0; x < count; x += 1) { for (let y = 0; y < this.rows; y += 1) { const v = matrix[x][y]; if (v === sym || v === wild) { winners.add(`${x},${y}`); } } } }
-		const shade = new Graphics(); for (let x = 0; x < this.cols; x += 1) { for (let y = 0; y < this.rows; y += 1) { if (winners.has(`${x},${y}`)) { continue; } const rx = this.offsetX + (x * this.cellW) + 8; const ry = this.offsetY + (y * this.cellH) + 8; shade.roundRect(rx, ry, this.cellW - 16, this.cellH - 16, 14); } }
-		shade.fill({ color: 0x000000, alpha: 0.45 }); this.layer.addChild(shade); for (let key of winners) { const [cx, cy] = key.split(",").map((n) => parseInt(n, 10)); const dot = this.dotAt(cx, cy, 0xffffff); this.layer.addChild(dot); }
 	}
 	advanceCycle() {
 		if (!this._cyclePaths.length) { return; }

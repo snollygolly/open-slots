@@ -10,7 +10,6 @@ export class Controls {
 		this.$meters = document.getElementById("meters");
 		this.$status = document.getElementById("status");
 		this.$winlog = document.getElementById("winlog");
-		this.$paths = document.getElementById("togglePaths");
 		this.update();
 		engine.on("balance", () => this.update());
 		engine.on("progressives", () => this.updateMeters());
@@ -20,7 +19,7 @@ export class Controls {
 			this.clearWinLog();
 			const result = await this.game.spinAndRender();
 			this.engine.applyWinCredits(result);
-			this.game.showWins(result, this.engine.pathsMode);
+			this.game.showWins(result);
 			this.appendWinLog(result);
 			this.update();
 		};
@@ -33,7 +32,7 @@ export class Controls {
 				this.clearWinLog();
 				const result = await this.game.spinAndRender();
 				this.engine.applyWinCredits(result);
-				this.game.showWins(result, this.engine.pathsMode);
+				this.game.showWins(result);
 				this.appendWinLog(result);
 				this.update();
 			}
@@ -47,10 +46,6 @@ export class Controls {
 				wagered += this.engine.bet; paid += r.totalWin; if (r.totalWin > 0) { hits += 1; }
 			}
 			this.$last.textContent = `Sim RTP ${((paid / wagered) * 100).toFixed(2)}% Hit ${(hits / n * 100).toFixed(1)}%`;
-		};
-		this.$paths.onclick = () => {
-			this.engine.pathsMode = this.engine.pathsMode === "paths" ? "area" : "paths";
-			this.$paths.textContent = this.engine.pathsMode.toUpperCase();
 		};
 		this.updateMeters();
 	}
