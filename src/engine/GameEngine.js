@@ -1,125 +1,252 @@
 import { EventBus } from "../core/EventBus.js";
+import { Events } from "../core/events.js";
+import { SpinFSM } from "./SpinFSM.js";
+import { FeaturesRegistry } from "./FeaturesRegistry.js";
 import { GameMath } from "./GameMath.js";
 import { FreeGames } from "../features/FreeGames.js";
 import { HoldAndSpin } from "../features/HoldAndSpin.js";
+import { ConfigValidator } from "../core/ConfigValidator.js";
+import { gameLogger } from "../core/log.js";
 
 export class GameEngine extends EventBus {
 	constructor(config, rngService, walletService) {
 		super();
+		
+		// Validate configuration before initializing
+		this.validateConfiguration(config);
+		
 		this.config = config;
 		this.rngService = rngService;
 		this.wallet = walletService;
 		this.credits = typeof walletService.getCredits === "function" ? walletService.getCredits() : 0;
 		this.progressives = typeof walletService.pg === "object" ? walletService.pg : walletService.progressives;
 		this.lastWin = 0;
-		this.spinning = false;
-		this.free = new FreeGames(config);
-			this.holdSpin = new HoldAndSpin(config, () => this.rngService.random(), (id) => this.wallet.takeJackpot(id));
-		this.math = new GameMath(config, () => this.rngService.random());
 		this.bet = config.bet;
-		this.emit("balance", null);
-		this.emit("progressives", null);
-		this.emit("status", "Ready");
+
+		// Initialize FSM
+		this.fsm = new SpinFSM();
+		this.setupFSMListeners();
+
+		// Initialize features registry
+		this.featuresRegistry = new FeaturesRegistry();
+		this.setupFeatures();
+
+		// Initialize math engine
+		this.math = new GameMath(config, () => this.rngService.random());
+
+		gameLogger.info("GameEngine initialized successfully");
+
+		// Initial state notifications
+		this.emit(Events.BALANCE, this.getBalanceData());
+		this.emit(Events.PROGRESSIVES, this.getProgressivesData());
+		this.emit(Events.STATUS, "Ready");
 	}
+
+	validateConfiguration(config) {
+		const validator = new ConfigValidator();
+		const result = validator.validate(config);
+
+		if (!result.valid) {
+			const errorMessage = "Configuration validation failed:\n" + result.errors.join("\n");
+			gameLogger.error(errorMessage);
+			throw new Error(errorMessage);
+		}
+
+		if (result.warnings.length > 0) {
+			gameLogger.warn("Configuration warnings:\n" + result.warnings.join("\n"));
+		}
+
+		gameLogger.info("Configuration validation passed");
+	}
+
+	setupFSMListeners() {
+		this.fsm.on("stateChanged", (data) => {
+			this.emit("fsmStateChanged", data);
+		});
+	}
+
+	setupFeatures() {
+		// Register available features
+		this.featuresRegistry.register("FreeGames", FreeGames);
+		this.featuresRegistry.register("HoldAndSpin", HoldAndSpin);
+
+		// Create feature instances with dependencies
+		const featureDependencies = {
+			rngFn: () => this.rngService.random(),
+			claimJackpotFn: (id) => this.wallet.takeJackpot(id)
+		};
+
+		this.free = this.featuresRegistry.create("FreeGames", this.config, featureDependencies);
+		this.holdSpin = this.featuresRegistry.create("HoldAndSpin", this.config, featureDependencies);
+	}
+
+	getBalanceData() {
+		return {
+			credits: this.credits,
+			bet: this.bet
+		};
+	}
+
+	getProgressivesData() {
+		return this.progressives;
+	}
+
 	async spinOnce() {
-		if (this.spinning) { return null; }
-		this.spinning = true;
-		this.emit("spinStart");
+		if (!this.fsm.canSpin()) {
+			return null;
+		}
+
+		// Request spin through FSM
+		const spinData = {
+			bet: this.bet,
+			freeGamesActive: this.free.isActive(),
+			holdSpinActive: this.holdSpin.isActive()
+		};
+
+		if (!this.fsm.requestSpin(spinData)) {
+			return null;
+		}
+
 		try {
-			// Determine wager (no charge during hold and spin respins or free games)
+			// Begin spinning
+			this.fsm.beginSpin();
+
+			// Determine wager (no charge during features)
 			const wager = (this.free.isActive() || this.holdSpin.isActive()) ? 0 : this.bet;
 			if (wager > 0) {
 				this.credits = this.wallet.deductCredits(wager);
 				this.wallet.contributeToMeters(this.bet);
-				this.emit("balance", null);
-				this.emit("progressives", null);
+				this.emit(Events.BALANCE, this.getBalanceData());
+				this.emit(Events.PROGRESSIVES, this.getProgressivesData());
 			}
 
+			// Generate spin result
 			let grid = this.math.spinReels();
 			let evaln = this.math.evaluateWays(grid);
-			let totalWin = 0;
-			let feature = null;
-			let hold = null;
-			const fgCfg = this.config.freeGames;
-			const hsCfg = this.config.holdAndSpin;
 
-			// Handle hold and spin state
+			// Apply hold and spin modifications if active
 			if (this.holdSpin.isActive()) {
-				// We're in a hold and spin - apply locked orbs to the new grid first
 				grid = this.holdSpin.applyLockedOrbsToGrid(grid);
-				// Re-evaluate with locked orbs in place
 				evaln = this.math.evaluateWays(grid);
-				
-				// Process the respin
-				const holdResult = this.holdSpin.processRespin(grid);
-				if (holdResult) {
-					// Hold and spin completed
-					totalWin = holdResult.totalWin;
-					hold = holdResult;
-					feature = "HOLD_AND_SPIN_END";
-				} else {
-					// Continue with more respins
-					const newOrbsThisSpin = this.holdSpin.getOrbCount() - (hold?.orbCount || this.holdSpin.getOrbCount());
-					feature = "HOLD_AND_SPIN_RESPIN";
-					hold = {
-						respinsRemaining: this.holdSpin.getRemainingRespins(),
-						orbCount: this.holdSpin.getOrbCount(),
-						newOrbs: Math.max(0, newOrbsThisSpin)
-					};
-				}
-				} else if (evaln.orbs >= hsCfg.triggerCount && !this.free.isActive()) {
-					// Start new hold and spin
-					this.holdSpin.trigger(grid, evaln.orbItems);
-				feature = "HOLD_AND_SPIN_START";
-				hold = {
-					respinsRemaining: this.holdSpin.getRemainingRespins(),
-					orbCount: this.holdSpin.getOrbCount(),
-					triggeredBy: evaln.orbs
-				};
-				this.emit("featureStart", feature);
-			} else if (evaln.scatters >= fgCfg.triggerScatters && !this.holdSpin.isActive()) {
-				// Start free games (not during hold and spin)
-				this.free.trigger();
-				feature = "FREE_GAMES_TRIGGER";
-				this.emit("featureStart", feature);
-			} else {
-				// Regular spin
-				totalWin += evaln.lineWin;
 			}
 
-			// Apply free games multiplier (but not during hold and spin)
-			if (this.free.isActive() && !this.holdSpin.isActive()) {
-				let bonusBoost = 0;
-				if (Math.random() < fgCfg.extraWildChance) { bonusBoost = Math.floor(10 + Math.random() * 40); }
-				const boost = Math.round((evaln.lineWin + bonusBoost) * fgCfg.multiplier);
-				totalWin += boost;
-				this.free.consume();
-				feature = feature || "FREE_GAMES";
-			}
-
-			this.lastWin = totalWin;
-			const result = { 
-				grid, 
-				evaln, 
-				totalWin, 
-				feature, 
-				hold, 
+			const spinResult = {
+				grid,
+				evaln,
+				totalWin: evaln.lineWin,
+				wager,
 				freeGames: this.free.remaining,
-				holdAndSpin: this.holdSpin.isActive() ? {
-					active: true,
-					respinsRemaining: this.holdSpin.getRemainingRespins(),
-					orbCount: this.holdSpin.getOrbCount()
-				} : null,
-				wager 
+				holdAndSpin: this.holdSpin.isActive() ? this.holdSpin.getState() : null
 			};
-			this.emit("spinEnd", result);
-			return result;
-		} finally {
-			this.spinning = false;
+
+			// Complete spin and evaluate
+			this.fsm.completeSpinAndEvaluate(spinResult);
+
+			// Process features
+			await this.processFeatures(spinResult);
+
+			return spinResult;
+
+		} catch (error) {
+			console.error("Error during spin:", error);
+			this.fsm.returnToIdle();
+			throw error;
+		}
+	}
+
+	async processFeatures(spinResult) {
+		const activeFeatures = this.featuresRegistry.getActiveFeatures();
+		let featureTriggered = false;
+		let totalFeatureWin = 0;
+
+		// Handle bought features first
+		if (spinResult.boughtFeature) {
+			if (spinResult.boughtFeature === "HOLD_AND_SPIN") {
+				const triggerData = {
+					grid: spinResult.grid,
+					orbItems: spinResult.evaln.orbItems
+				};
+				const triggerResult = this.holdSpin.trigger(triggerData);
+				this.fsm.triggerFeature({
+					type: "HOLD_AND_SPIN",
+					data: triggerResult
+				});
+				featureTriggered = true;
+			}
+		} else {
+			// Check for natural feature triggers
+			for (const feature of [this.holdSpin, this.free]) {
+				if (!feature.isActive()) {
+					const triggerCheck = feature.checkTrigger(spinResult);
+					if (triggerCheck.triggered) {
+						const triggerResult = feature.trigger(triggerCheck.data);
+						this.fsm.triggerFeature({
+							type: feature.name,
+							data: triggerResult
+						});
+						featureTriggered = true;
+						break; // Only one feature can trigger per spin
+					}
+				}
+			}
+		}
+
+		// Process active features
+		if (activeFeatures.length > 0 && !featureTriggered) {
+			// If we have active features but didn't trigger a new one, ensure we're in FEATURE state
+			if (this.fsm.isInState("EVALUATING")) {
+				// Transition to FEATURE state to process ongoing features
+				this.fsm.triggerFeature({
+					type: "ONGOING_FEATURE",
+					data: { activeFeatures: activeFeatures.length }
+				});
+			}
+		}
+
+		for (const feature of activeFeatures) {
+			const processResult = feature.process(spinResult);
+			totalFeatureWin += processResult.totalWin;
+
+			// Only call completeFeature if FSM is in FEATURE state
+			if (this.fsm.isInState("FEATURE")) {
+				if (processResult.completed) {
+					this.fsm.completeFeature({
+						feature: feature.name,
+						totalWin: processResult.totalWin,
+						data: processResult.data,
+						continueSpin: processResult.continueSpin
+					});
+				} else if (processResult.continueSpin) {
+					// Feature wants to continue spinning (e.g., hold and spin respins)
+					this.fsm.completeFeature({
+						feature: feature.name,
+						totalWin: 0,
+						continueSpin: true,
+						data: processResult.data
+					});
+					return;
+				}
+			}
+		}
+
+		// Update spin result with feature wins
+		spinResult.totalWin += totalFeatureWin;
+		this.lastWin = spinResult.totalWin;
+
+		// Complete evaluation
+		if (!featureTriggered && activeFeatures.length === 0) {
+			this.fsm.completeEvaluation();
+		}
+
+		// Complete evaluation and transition to appropriate state
+		// Don't emit PAYING event immediately - let the UI control when to show wins
+		
+		if (!featureTriggered) {
+			this.fsm.returnToIdle();
 		}
 	}
 	
-		simulateSpinOnly() {
+	simulateSpinOnly() {
 			const grid = this.math.spinReels();
 			const evaln = this.math.evaluateWays(grid);
 			let totalWin = 0;
@@ -168,19 +295,30 @@ export class GameEngine extends EventBus {
 		}
 
 	async buyFeature(featureType) {
-		if (this.spinning) { return null; }
-		this.spinning = true;
-		this.emit("spinStart");
+		if (!this.fsm.canSpin()) { return null; }
+
+		// Request spin through FSM (no wager for bought features)
+		const spinData = {
+			bet: 0,
+			freeGamesActive: this.free.isActive(),
+			holdSpinActive: this.holdSpin.isActive(),
+			boughtFeature: featureType
+		};
+
+		if (!this.fsm.requestSpin(spinData)) {
+			return null;
+		}
+
 		try {
-			// Force a specific feature result without charging bet
+			// Begin spinning
+			this.fsm.beginSpin();
+
+			// Generate spin result and force feature trigger
 			let grid = this.math.spinReels();
 			let evaln = this.math.evaluateWays(grid);
-			let totalWin = 0;
-			let feature = null;
-			let hold = null;
 
 			if (featureType === "HOLD_AND_SPIN") {
-				// Force the grid to have at least 6 orbs visibly
+				// Force the grid to have enough orbs to trigger hold and spin
 				const triggerCount = this.config.holdAndSpin.triggerCount;
 				const currentOrbs = evaln.orbs;
 				
@@ -203,41 +341,45 @@ export class GameEngine extends EventBus {
 					// Re-evaluate with the modified grid
 					evaln = this.math.evaluateWays(grid);
 				}
-
-				this.holdSpin.trigger(grid);
-				feature = "HOLD_AND_SPIN_START";
-				hold = {
-					respinsRemaining: this.holdSpin.getRemainingRespins(),
-					orbCount: this.holdSpin.getOrbCount(),
-					triggeredBy: evaln.orbs
-				};
-				this.emit("featureStart", feature);
 			}
 
-			this.lastWin = totalWin;
-			const result = { 
-				grid, 
-				evaln, 
-				totalWin, 
-				feature, 
-				hold, 
+			const spinResult = {
+				grid,
+				evaln,
+				totalWin: evaln.lineWin,
+				wager: 0, // No wager for bought features
 				freeGames: this.free.remaining,
-				holdAndSpin: this.holdSpin.isActive() ? {
-					active: true,
-					respinsRemaining: this.holdSpin.getRemainingRespins(),
-					orbCount: this.holdSpin.getOrbCount()
-				} : null,
-				wager: 0 // No wager for bought features
+				holdAndSpin: this.holdSpin.isActive() ? this.holdSpin.getState() : null,
+				boughtFeature: featureType
 			};
-			this.emit("spinEnd", result);
-			return result;
-		} finally {
-			this.spinning = false;
+
+			// Complete spin and evaluate
+			this.fsm.completeSpinAndEvaluate(spinResult);
+
+			// Process features - this will handle the feature triggering
+			await this.processFeatures(spinResult);
+
+			return spinResult;
+
+		} catch (error) {
+			console.error("Error during feature purchase:", error);
+			this.fsm.returnToIdle();
+			throw error;
 		}
 	}
 
 	applyWinCredits(result) {
-		this.credits = this.wallet.addCredits(result.totalWin);
-		this.emit("balance", null);
+		// Only apply credits if there's a win
+		if (result.totalWin > 0) {
+			this.credits = this.wallet.addCredits(result.totalWin);
+			this.emit(Events.PAYING, result); // NOW emit the paying event
+		}
+		
+		this.emit(Events.BALANCE, this.getBalanceData());
+		
+		// Complete the payment and return to idle if FSM is in a payable state  
+		if (this.fsm.isInState("PAYING") || this.fsm.isInState("EVALUATING")) {
+			this.fsm.returnToIdle();
+		}
 	}
 }

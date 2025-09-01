@@ -1,3 +1,5 @@
+import { Events } from "../core/events.js";
+
 export class Controls {
 	constructor(engine, game) {
 		this.engine = engine; this.game = game;
@@ -12,15 +14,17 @@ export class Controls {
 		this.$status = document.getElementById("status");
 		this.$winlog = document.getElementById("winlog");
 		this.update();
-		engine.on("balance", () => this.update());
-		engine.on("progressives", () => this.updateMeters());
-		engine.on("status", (msg) => { this.$status.textContent = msg; });
+		engine.on(Events.BALANCE, () => this.update());
+		engine.on(Events.PROGRESSIVES, () => this.updateMeters());
+		engine.on(Events.STATUS, (msg) => { this.$status.textContent = msg; });
 		this.$spin.onclick = async() => {
-			if (this.engine.spinning) { return; }
+			if (!this.engine.fsm.canSpin()) { 
+				console.log(`[Controls] Cannot spin - FSM state: ${this.engine.fsm.getCurrentState().name}, Hold&Spin active: ${this.engine.holdSpin?.isActive?.()}`);
+				return; 
+			}
 			this.clearWinLog();
 			const result = await this.game.spinAndRender();
-			this.engine.applyWinCredits(result);
-			this.game.showWins(result);
+			// spinAndRender already handles win display after animation
 			this.appendWinLog(result);
 			this.update();
 		};
@@ -32,15 +36,14 @@ export class Controls {
 				if (this.engine.credits < this.engine.bet) { auto = false; break; }
 				this.clearWinLog();
 				const result = await this.game.spinAndRender();
-				this.engine.applyWinCredits(result);
-				this.game.showWins(result);
+				// spinAndRender already handles win display after animation
 				this.appendWinLog(result);
 				this.update();
 			}
 			this.$auto.textContent = "AUTO";
 		};
 		this.$buyFeature.onclick = async() => {
-			if (this.engine.spinning) { return; }
+			if (!this.engine.fsm.canSpin()) { return; }
 			const featureCost = 10000;
 			if (this.engine.credits < featureCost) {
 				this.$status.textContent = "Insufficient credits to buy feature!";
@@ -50,13 +53,12 @@ export class Controls {
 			
 			// Deduct the feature cost
 			this.engine.credits = this.engine.wallet.deductCredits(featureCost);
-			this.engine.emit("balance", null);
+			this.engine.emit(Events.BALANCE, this.engine.getBalanceData());
 			this.update();
 			
 			this.clearWinLog();
 			const result = await this.game.spinAndRenderWithFeature("HOLD_AND_SPIN");
-			this.engine.applyWinCredits(result);
-			this.game.showWins(result);
+			// spinAndRenderWithFeature already handles win display after animation
 			this.appendWinLog(result);
 			this.update();
 		};
