@@ -1,8 +1,7 @@
 import { Container, Sprite, Texture, Graphics, Rectangle } from "pixi.js";
 import { Rumble } from "./effects/Rumble.js";
 import { SparkleEmitter } from "./effects/SparkleEmitter.js";
-
-const orbSheetUrl = "./src/assets/orb_meter.png";
+import orbSheetUrl from "../assets/orb_meter.png?url";
 
 export class OrbMeter {
   constructor(app, hostStage, x, y) {
@@ -36,6 +35,7 @@ export class OrbMeter {
   async _load() {
     try {
       console.log("[OrbMeter] Loading spritesheet from:", orbSheetUrl);
+      console.log("[OrbMeter] Resolved URL type:", typeof orbSheetUrl, orbSheetUrl);
       
       // Use the working image element approach
       const img = new Image();
