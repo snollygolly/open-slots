@@ -93,7 +93,7 @@ export class Controls {
 			const jpText = Object.keys(jackpotHits).filter(jp => jackpotHits[jp] > 0).map(jp => `${jp}:${jackpotHits[jp]}`).join(' ') || 'None';
 			console.log(`[Sim] Max orbs seen: ${maxOrbs}, Trigger needs: ${this.engine.config.holdAndSpin.triggerCount}`);
 			console.log(`[Sim] Orb distribution:`, orbCounts);
-			this.$last.textContent = `Sim RTP ${((paid / wagered) * 100).toFixed(2)}% Hit ${(hits / n * 100).toFixed(1)}% | FG: ${freeGamesTriggers}x (${totalFreeGamesPlayed} spins) | Orb: ${orbFeatures} (max: ${maxOrbs}) | JP: ${jpText}`;
+			this.$last.textContent = `Sim RTP ${((paid / wagered) * 100).toFixed(2)}% | Hit ${(hits / n * 100).toFixed(1)}% | FG ${freeGamesTriggers}x (${totalFreeGamesPlayed}) | H&S ${orbFeatures}x (base ${maxOrbs}) | JP ${jpText}`;
 		};
 		this.updateMeters();
 	}

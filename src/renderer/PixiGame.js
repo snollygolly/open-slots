@@ -39,14 +39,22 @@ export class PixiGame {
 		this.reelViewport.zIndex = 10;
 		this.stage.addChild(this.reelViewport);
 
-		this.overlayViewport = new Container();
-		this.overlayViewport.position.set(this.offsetX, this.offsetY);
-		this.overlayViewport.zIndex = 30;
-		this.stage.addChild(this.overlayViewport);
+			this.overlayViewport = new Container();
+			this.overlayViewport.position.set(this.offsetX, this.offsetY);
+			this.overlayViewport.zIndex = 30;
+			this.overlayViewport.sortableChildren = true; // allow z-index ordering within overlay
+			this.stage.addChild(this.overlayViewport);
+			// Separate layers so highlighter resets don't wipe labels
+			this.highlightLayer = new Container();
+			this.highlightLayer.zIndex = 5;
+			this.overlayViewport.addChild(this.highlightLayer);
+			this.orbLabels = new Container();
+			this.orbLabels.zIndex = 10; // ensure labels sit above highlights
+			this.overlayViewport.addChild(this.orbLabels);
 
 		// Clip reels and overlays to the frame area
-		this.frame.applyMask(this.reelViewport);
-		this.frame.applyMask(this.overlayViewport);
+			this.frame.applyMask(this.reelViewport);
+			this.frame.applyMask(this.overlayViewport);
 
 		this.winText = new Text({
 			text: "",
@@ -114,17 +122,17 @@ export class PixiGame {
 			this.reels.push(reel);
 		}
 
-		this.highlighter = new WinHighlighter(
-			this.app,
-			this.overlayViewport,
-			0,
-			0,
-			this.cellW,
-			this.cellH,
-			this.cols,
-			this.rows,
-			config.symbols
-		);
+			this.highlighter = new WinHighlighter(
+				this.app,
+				this.highlightLayer,
+				0,
+				0,
+				this.cellW,
+				this.cellH,
+				this.cols,
+				this.rows,
+				config.symbols
+			);
 
 		const boot = engine.math.spinReels();
 		for (let i = 0; i < this.cols; i += 1) {
@@ -187,11 +195,17 @@ export class PixiGame {
 		});
 	}
 
-	prepareForSpin() {
-		this.highlighter.reset();
-		// Clear HUD win text at spin start
-		this.winText.text = "";
-	}
+    prepareForSpin() {
+        this.highlighter.reset();
+        // Clear HUD win text at spin start, except during Hold & Spin where it should persist
+        if (!this.engine.holdSpin?.isActive?.()) {
+            this.winText.text = "";
+        }
+        // Preserve ORB labels during Hold & Spin; otherwise clear
+        if (!this.engine.holdSpin?.isActive?.() && this.orbLabels) {
+            this.orbLabels.removeChildren();
+        }
+    }
 
 	async spinAndRender() {
 		const result = await this.engine.spinOnce();
@@ -214,10 +228,10 @@ export class PixiGame {
 					anticip[x]
 				));
 			}
-			await Promise.all(tasks);
-		}
+				await Promise.all(tasks);
+			}
 
-		// Debug: log what features we're seeing
+			// Debug: log what features we're seeing
 		if (result.feature) {
 			console.log(`[PixiGame] Feature detected: "${result.feature}", in free games: ${this._freeGamesRemaining > 0}`);
 			// Log full result when in free games to understand retrigger detection
@@ -231,28 +245,34 @@ export class PixiGame {
 		}
 
 		// Handle different features
-		if (result.feature === "HOLD_AND_SPIN_START") {
-			// Hold and spin starting - trigger meter animation and show status
-			this.orbMeter.triggerTransition();
-			this._spinsSinceLastOrb = 0;
-			this._orbProgress = 0;
-			this.orbMeter.setProgress01(0);
-			this.holdSpinText.text = `${result.hold.orbCount} Orbs | ${result.hold.respinsRemaining} Respins`;
-			this.holdSpinText.visible = true;
-			console.log(`[PixiGame] Hold and Spin started with ${result.hold.orbCount} orbs, ${result.hold.respinsRemaining} respins remaining`);
-		} else if (result.feature === "HOLD_AND_SPIN_RESPIN") {
-			this.holdSpinText.text = `${result.hold.orbCount} Orbs | ${result.hold.respinsRemaining} Respins`;
-			if (result.hold.newOrbs > 0) {
-				this.holdSpinText.text += ` (+${result.hold.newOrbs})`;
-			}
-			console.log(`[PixiGame] Hold and Spin respin - ${result.hold.newOrbs} new orbs, ${result.hold.orbCount} total, ${result.hold.respinsRemaining} respins remaining`);
-		} else if (result.feature === "HOLD_AND_SPIN_END") {
-			this.holdSpinText.visible = false;
-			console.log(`[PixiGame] Hold and Spin ended - won ${result.totalWin} with ${result.hold.orbCount} orbs`);
-			if (result.hold.isFull) {
-				console.log(`[PixiGame] Full grid bonus awarded!`);
-			}
-		} else if (result.feature && result.feature.includes("FREE")) {
+        if (result.feature === "HOLD_AND_SPIN_START") {
+            // Hold and spin starting - trigger meter animation and show status
+            this.orbMeter.triggerTransition();
+            this._spinsSinceLastOrb = 0;
+            this._orbProgress = 0;
+            this.orbMeter.setProgress01(0);
+            this.holdSpinText.text = `${result.hold.orbCount} Orbs | ${result.hold.respinsRemaining} Respins`;
+            this.holdSpinText.visible = true;
+            console.log(`[PixiGame] Hold and Spin started with ${result.hold.orbCount} orbs, ${result.hold.respinsRemaining} respins remaining`);
+            // Render locked orb labels immediately
+            this._renderHoldLockedOrbLabels();
+            this._updateHoldWinText();
+        } else if (result.feature === "HOLD_AND_SPIN_RESPIN") {
+            this.holdSpinText.text = `${result.hold.orbCount} Orbs | ${result.hold.respinsRemaining} Respins`;
+            if (result.hold.newOrbs > 0) {
+                this.holdSpinText.text += ` (+${result.hold.newOrbs})`;
+            }
+            console.log(`[PixiGame] Hold and Spin respin - ${result.hold.newOrbs} new orbs, ${result.hold.orbCount} total, ${result.hold.respinsRemaining} respins remaining`);
+            // Ensure labels reflect all locked orbs after the respin outcome
+            this._renderHoldLockedOrbLabels();
+            this._updateHoldWinText();
+        } else if (result.feature === "HOLD_AND_SPIN_END") {
+            this.holdSpinText.visible = false;
+            console.log(`[PixiGame] Hold and Spin ended - won ${result.totalWin} with ${result.hold.orbCount} orbs`);
+            if (result.hold.isFull) {
+                console.log(`[PixiGame] Full grid bonus awarded!`);
+            }
+        } else if (result.feature && result.feature.includes("FREE")) {
 			// Free games detected - but only handle if NOT already in free games OR this is a retrigger
 			if (this._freeGamesRemaining === 0) {
 				// Starting new free games
@@ -266,7 +286,7 @@ export class PixiGame {
 					this._handleFreeGamesStart(result);
 				} else {
 					console.log(`[PixiGame] In free games, only ${freeGameSymbolCount} free game symbols - not retriggering`);
-				}
+    }
 			}
 		} else {
 			// No special feature - advance the orb meter (only if not in free games and not in hold and spin)
@@ -293,13 +313,84 @@ export class PixiGame {
 			}
 		}
 
-		// Show win amount, but exclude features that have their own visual feedback
-		const excludedFeatures = ["FREE_GAMES", "FREE_GAMES_TRIGGER", "HOLD_AND_SPIN_START", "HOLD_AND_SPIN_RESPIN", "HOLD_AND_SPIN_END"];
-		const displayFeature = result.feature && !excludedFeatures.includes(result.feature) ? `${result.feature}  ` : "";
-		this.winText.text = `${displayFeature}Win ${result.totalWin}`;
+        // Update win label
+        if (result.feature === "HOLD_AND_SPIN_END") {
+            // Feature concluded: show the final total win from the feature
+            this.winText.text = `Win ${result.totalWin}`;
+        } else if (this.engine.holdSpin?.isActive?.() || result.feature === "HOLD_AND_SPIN_START" || result.feature === "HOLD_AND_SPIN_RESPIN") {
+            // During Hold & Spin, show cumulative locked total (credits + jackpots evaluated)
+            this._updateHoldWinText();
+        } else {
+            // Normal behavior
+            const excludedFeatures = ["FREE_GAMES", "FREE_GAMES_TRIGGER", "HOLD_AND_SPIN_START", "HOLD_AND_SPIN_RESPIN", "HOLD_AND_SPIN_END"];
+            const displayFeature = result.feature && !excludedFeatures.includes(result.feature) ? `${result.feature}  ` : "";
+            this.winText.text = `${displayFeature}Win ${result.totalWin}`;
+        }
 
-		return result;
-	}
+			return result;
+		}
+
+    _renderOrbLabels(result) {
+        if (!this.orbLabels) { return; }
+        this.orbLabels.removeChildren();
+        const items = result?.evaln?.orbItems || [];
+        const pgMeta = this.config?.progressives?.meta || {};
+			for (let i = 0; i < items.length; i += 1) {
+				const it = items[i];
+				const cx = (it.x * this.cellW) + (this.cellW / 2);
+				const cy = (it.y * this.cellH) + (this.cellH / 2);
+				let label = "";
+				if (it.type === "C") { label = `${it.amount}`; }
+				else if (it.type === "JP") { label = (pgMeta[it.id]?.label || it.id); }
+				const t = new Text({ text: label, style: new TextStyle({ fill: "#fff", fontFamily: "system-ui", fontSize: 26, fontWeight: "800", stroke: { color: 0x031421, width: 4 } }) });
+				t.anchor.set(0.5);
+				t.position.set(cx, cy);
+				this.orbLabels.addChild(t);
+        }
+    }
+
+    _renderHoldLockedOrbLabels() {
+        if (!this.orbLabels) { return; }
+        this.orbLabels.removeChildren();
+        const pgMeta = this.config?.progressives?.meta || {};
+        const locked = typeof this.engine.holdSpin?.getLockedOrbs === 'function'
+            ? this.engine.holdSpin.getLockedOrbs()
+            : [];
+        for (let i = 0; i < locked.length; i += 1) {
+            const it = locked[i];
+            const cx = (it.reel * this.cellW) + (this.cellW / 2);
+            const cy = (it.row * this.cellH) + (this.cellH / 2);
+            let label = '';
+            if (it.type === 'C') { label = `${it.amount}`; }
+            else if (it.type === 'JP') { label = (pgMeta[it.id]?.label || it.id); }
+            const t = new Text({ text: label, style: new TextStyle({ fill: '#fff', fontFamily: 'system-ui', fontSize: 26, fontWeight: '800', stroke: { color: 0x031421, width: 4 } }) });
+            t.anchor.set(0.5);
+            t.position.set(cx, cy);
+            this.orbLabels.addChild(t);
+        }
+    }
+
+    _computeHoldLockedTotalCredits() {
+        const locked = typeof this.engine.holdSpin?.getLockedOrbs === 'function'
+            ? this.engine.holdSpin.getLockedOrbs()
+            : [];
+        const pg = this.engine.wallet?.pg;
+        const denom = this.engine.config?.denom || 1;
+        let sum = 0;
+        for (let i = 0; i < locked.length; i += 1) {
+            const o = locked[i];
+            if (o.type === 'C') { sum += o.amount; }
+            else if (o.type === 'JP' && pg && pg.balances && typeof pg.balances[o.id] === 'number') {
+                sum += Math.round(pg.balances[o.id] / denom);
+            }
+        }
+        return sum;
+    }
+
+    _updateHoldWinText() {
+        const total = this._computeHoldLockedTotalCredits();
+        this.winText.text = `Win ${total}`;
+    }
 
 	async _renderHoldAndSpinRespin(result) {
 		// All reels spin at the same speed - no special handling for locked positions
@@ -345,16 +436,18 @@ export class PixiGame {
 		}
 
 		// Handle different features (same logic as regular spins)
-		if (result.feature === "HOLD_AND_SPIN_START") {
-			// Hold and spin starting - trigger meter animation and show status
-			this.orbMeter.triggerTransition();
-			this._spinsSinceLastOrb = 0;
-			this._orbProgress = 0;
-			this.orbMeter.setProgress01(0);
-			this.holdSpinText.text = `${result.hold.orbCount} Orbs | ${result.hold.respinsRemaining} Respins`;
-			this.holdSpinText.visible = true;
-			console.log(`[PixiGame] Hold and Spin started with ${result.hold.orbCount} orbs, ${result.hold.respinsRemaining} respins remaining`);
-		}
+    if (result.feature === "HOLD_AND_SPIN_START") {
+        // Hold and spin starting - trigger meter animation and show status
+        this.orbMeter.triggerTransition();
+        this._spinsSinceLastOrb = 0;
+        this._orbProgress = 0;
+        this.orbMeter.setProgress01(0);
+        this.holdSpinText.text = `${result.hold.orbCount} Orbs | ${result.hold.respinsRemaining} Respins`;
+        this.holdSpinText.visible = true;
+        console.log(`[PixiGame] Hold and Spin started with ${result.hold.orbCount} orbs, ${result.hold.respinsRemaining} respins remaining`);
+        // Render locked orb labels immediately
+        this._renderHoldLockedOrbLabels();
+    }
 
 		// Show win amount for bought features, but exclude features that have their own visual feedback
 		const excludedFeatures = ["FREE_GAMES", "FREE_GAMES_TRIGGER", "HOLD_AND_SPIN_START", "HOLD_AND_SPIN_RESPIN", "HOLD_AND_SPIN_END"];
@@ -431,12 +524,25 @@ export class PixiGame {
 		console.log("[PixiGame] Free games ended");
 	}
 
-	showWins(result) {
-		// Always show path highlights (compat if older bundles expected .show)
-		if (typeof this.highlighter.showPaths === "function") {
-			this.highlighter.showPaths(result);
-		} else if (typeof this.highlighter.show === "function") {
-			this.highlighter.show(result, "paths");
-		}
-	}
+    showWins(result) {
+        // Always show path highlights (compat if older bundles expected .show)
+        if (typeof this.highlighter.showPaths === "function") {
+            this.highlighter.showPaths(result);
+        } else if (typeof this.highlighter.show === "function") {
+            this.highlighter.show(result, "paths");
+        }
+        // Draw ORB value labels on top of any highlight shade
+        if (this.engine.holdSpin?.isActive?.()) {
+            // During Hold & Spin, render persistent locked values
+            this._renderHoldLockedOrbLabels();
+        } else {
+            // Base game rendering uses this spin's orb items
+            this._renderOrbLabels(result);
+        }
+        // Bring label layer to top just in case
+        if (this.overlayViewport && this.orbLabels) {
+            this.orbLabels.zIndex = 10;
+            this.highlightLayer.zIndex = 5;
+        }
+    }
 }

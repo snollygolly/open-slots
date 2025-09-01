@@ -58,7 +58,7 @@ export class ReelColumn {
 		cell.stroke({ color: 0x031421, width: 4 });
 
 		const label = new Text({
-			text: sym,
+			text: sym === "ORB" ? "" : sym,
 			style: new TextStyle({ fill: "#031421", fontSize: 20, fontFamily: "system-ui", fontWeight: "700" })
 		});
 		label.anchor.set(0.5);

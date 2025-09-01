@@ -14,7 +14,7 @@ export class GameEngine extends EventBus {
 		this.lastWin = 0;
 		this.spinning = false;
 		this.free = new FreeGames(config);
-		this.holdSpin = new HoldAndSpin(config, () => this.rngService.random());
+			this.holdSpin = new HoldAndSpin(config, () => this.rngService.random(), (id) => this.wallet.takeJackpot(id));
 		this.math = new GameMath(config, () => this.rngService.random());
 		this.bet = config.bet;
 		this.emit("balance", null);
@@ -67,9 +67,9 @@ export class GameEngine extends EventBus {
 						newOrbs: Math.max(0, newOrbsThisSpin)
 					};
 				}
-			} else if (evaln.orbs >= hsCfg.triggerCount && !this.free.isActive()) {
-				// Start new hold and spin
-				this.holdSpin.trigger(grid);
+				} else if (evaln.orbs >= hsCfg.triggerCount && !this.free.isActive()) {
+					// Start new hold and spin
+					this.holdSpin.trigger(grid, evaln.orbItems);
 				feature = "HOLD_AND_SPIN_START";
 				hold = {
 					respinsRemaining: this.holdSpin.getRemainingRespins(),
@@ -119,27 +119,53 @@ export class GameEngine extends EventBus {
 		}
 	}
 	
-	simulateSpinOnly() {
-		const grid = this.math.spinReels();
-		const evaln = this.math.evaluateWays(grid);
-		let totalWin = 0;
-		let feature = null;
-		let hold = null;
-		const fgCfg = this.config.freeGames;
-		const hsCfg = this.config.holdAndSpin;
-		if (evaln.orbs >= hsCfg.triggerCount) {
-			const startOrbs = []; for (let i = 0; i < evaln.orbs; i += 1) { startOrbs.push({ type: "C", amount: 50 }); }
-			hold = this.math.playHoldAndSpin(startOrbs, this.bet, () => 1000);
-			totalWin += hold.sumCredits;
-			feature = "HOLD_AND_SPIN";
-		} else if (evaln.scatters >= fgCfg.triggerScatters) {
-			feature = "FREE_GAMES_TRIGGER";
-		} else {
-			totalWin += evaln.lineWin;
+		simulateSpinOnly() {
+			const grid = this.math.spinReels();
+			const evaln = this.math.evaluateWays(grid);
+			let totalWin = 0;
+			let feature = null;
+			let hold = null;
+			const fgCfg = this.config.freeGames;
+			const hsCfg = this.config.holdAndSpin;
+			if (evaln.orbs >= hsCfg.triggerCount) {
+				// Mirror runtime Hold&Spin logic with a temporary instance (does not mutate real state)
+				const creditForJackpot = (id) => {
+					const bal = this.wallet?.pg?.balances?.[id];
+					const denom = this.config?.denom || 1;
+					return typeof bal === 'number' ? Math.round(bal / denom) : 0;
+				};
+				const simHS = new HoldAndSpin(this.config, () => this.rngService.random(), creditForJackpot);
+				simHS.trigger(grid, evaln.orbItems);
+            let result = null;
+            while (!result) {
+                let next = this.math.spinReels();
+                next = simHS.applyLockedOrbsToGrid(next);
+                result = simHS.processRespin(next);
+            }
+            totalWin += result.totalWin;
+            // Build jackpots hit map (including GRAND on full grid)
+            const jackpots = {};
+            if (Array.isArray(result.orbs)) {
+                for (let i = 0; i < result.orbs.length; i += 1) {
+                    const o = result.orbs[i];
+                    if (o && o.type === 'JP' && o.id) {
+                        jackpots[o.id] = (jackpots[o.id] || 0) + 1;
+                    }
+                }
+            }
+            if (result.isFull && this.config.holdAndSpin.fullGridWinsGrand) {
+                jackpots.GRAND = (jackpots.GRAND || 0) + 1;
+            }
+            hold = { totalWin: result.totalWin, orbCount: result.orbCount, isFull: result.isFull, jackpots };
+            feature = "HOLD_AND_SPIN";
+			} else if (evaln.scatters >= fgCfg.triggerScatters) {
+				feature = "FREE_GAMES_TRIGGER";
+			} else {
+				totalWin += evaln.lineWin;
+			}
+			const wager = this.bet;
+			return { grid, evaln, totalWin, feature, hold, wager };
 		}
-		const wager = this.bet;
-		return { grid, evaln, totalWin, feature, hold, wager };
-	}
 
 	async buyFeature(featureType) {
 		if (this.spinning) { return null; }

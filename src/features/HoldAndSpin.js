@@ -2,18 +2,19 @@ import { EventBus } from "../core/EventBus.js";
 import { pickWeighted } from "../core/utils.js";
 
 export class HoldAndSpin extends EventBus {
-	constructor(config, rngFn) {
+	constructor(config, rngFn, claimJackpotFn) {
 		super();
 		this.cfg = config.holdAndSpin;
 		this.gridCfg = config.grid;
 		this.rng = rngFn;
+		this.claimJackpot = claimJackpotFn; // function(id) -> credits
 		this.respinsRemaining = 0;
 		this.lockedOrbs = [];
 		this.lockedPositions = new Set(); // Track which grid positions are locked
 		this.totalPositions = this.gridCfg.reels * this.gridCfg.rows;
 	}
 
-	trigger(initialGrid) {
+	trigger(initialGrid, startingItems) {
 		// Start hold and spin with the initial orbs from the grid
 		this.respinsRemaining = this.cfg.respins;
 		this.lockedOrbs = [];
@@ -25,13 +26,17 @@ export class HoldAndSpin extends EventBus {
 				if (initialGrid[reel][row] === "ORB") {
 					const positionKey = `${reel},${row}`;
 					this.lockedPositions.add(positionKey);
-					const creditValue = pickWeighted(this.rng, this.cfg.creditValues, this.cfg.creditWeights);
-					this.lockedOrbs.push({ 
-						type: "C", 
-						amount: creditValue,
-						reel: reel,
-						row: row 
-					});
+					// If caller provided starting items, use them; else pick a credit value
+					let item = null;
+					if (Array.isArray(startingItems)) {
+						item = startingItems.find((o) => o.x === reel && o.y === row) || null;
+					}
+					if (item && item.type === "JP") {
+						this.lockedOrbs.push({ type: "JP", id: item.id, reel, row });
+					} else {
+						const creditValue = item && item.type === "C" ? item.amount : pickWeighted(this.rng, this.cfg.creditValues, this.cfg.creditWeights);
+						this.lockedOrbs.push({ type: "C", amount: creditValue, reel, row });
+					}
 				}
 			}
 		}
@@ -51,13 +56,16 @@ export class HoldAndSpin extends EventBus {
 				if (respinGrid[reel][row] === "ORB" && !this.lockedPositions.has(positionKey)) {
 					// This is a new orb - lock it
 					this.lockedPositions.add(positionKey);
-					const creditValue = pickWeighted(this.rng, this.cfg.creditValues, this.cfg.creditWeights);
-					this.lockedOrbs.push({ 
-						type: "C", 
-						amount: creditValue,
-						reel: reel,
-						row: row 
-					});
+					// Chance for jackpot (not GRAND), else credit value
+					if (this.rng() < (this.cfg.jackpotChancesPerOrb || 0)) {
+						const ids = Object.keys(this.cfg.jackpotWeights || {});
+						const weights = ids.map((k) => this.cfg.jackpotWeights[k]);
+						const id = pickWeighted(this.rng, ids, weights);
+						this.lockedOrbs.push({ type: "JP", id, reel, row });
+					} else {
+						const creditValue = pickWeighted(this.rng, this.cfg.creditValues, this.cfg.creditWeights);
+						this.lockedOrbs.push({ type: "C", amount: creditValue, reel, row });
+					}
 					newOrbCount++;
 				}
 			}
@@ -83,24 +91,24 @@ export class HoldAndSpin extends EventBus {
 	}
 
 	complete() {
-		// Calculate final payout
+		// Calculate final payout: sum credits + claim jackpots via callback
 		let totalWin = 0;
 		for (let i = 0; i < this.lockedOrbs.length; i++) {
-			totalWin += this.lockedOrbs[i].amount;
+			const o = this.lockedOrbs[i];
+			if (o.type === "C") { totalWin += o.amount; }
+			else if (o.type === "JP" && typeof this.claimJackpot === "function") { totalWin += this.claimJackpot(o.id); }
 		}
 
 		// Check for full grid bonus
 		const isFull = this.lockedOrbs.length >= this.totalPositions;
-		if (isFull && this.cfg.fullGridWinsGrand) {
-			totalWin += 5000; // Fixed grand bonus
-		}
+		if (isFull && this.cfg.fullGridWinsGrand && typeof this.claimJackpot === "function") { totalWin += this.claimJackpot("GRAND"); }
 
 		const result = {
 			totalWin,
 			orbCount: this.lockedOrbs.length,
 			orbs: [...this.lockedOrbs],
 			isFull,
-			grandBonus: isFull && this.cfg.fullGridWinsGrand ? 5000 : 0
+			grandBonus: isFull && this.cfg.fullGridWinsGrand ? 1 : 0
 		};
 
 		// Reset state
