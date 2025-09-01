@@ -1,4 +1,4 @@
-import { Container, Text, TextStyle } from "pixi.js";
+import { Container, Text, TextStyle, Graphics } from "pixi.js";
 import { ReelColumn } from "./ReelColumn.js";
 import { WinHighlighter } from "./WinHighlighter.js";
 import { FrameUI } from "./ui/FrameUI.js";
@@ -52,12 +52,36 @@ export class PixiGame {
 			this.overlayViewport.sortableChildren = true;
 			this.layers.overlay.addChild(this.overlayViewport);
 			// Separate layers so highlighter resets don't wipe labels
+			this.reelPotentialLayer = new Container();
+			this.reelPotentialLayer.zIndex = 4; // below highlights and labels
+			this.overlayViewport.addChild(this.reelPotentialLayer);
 			this.highlightLayer = new Container();
 			this.highlightLayer.zIndex = 5;
 			this.overlayViewport.addChild(this.highlightLayer);
 			this.orbLabels = new Container();
 			this.orbLabels.zIndex = 10; // ensure labels sit above highlights
 			this.overlayViewport.addChild(this.orbLabels);
+
+		// Pre-build per-reel potential highlight overlays (glow/veil + additive ring)
+		this._reelPotentialOverlays = [];
+		for (let x = 0; x < this.cols; x += 1) {
+			const wrap = new Container();
+			wrap.position.set(x * this.cellW, 0);
+			wrap.visible = false;
+			wrap.zIndex = 1;
+			const fill = new Graphics();
+			fill.roundRect(0, 0, this.cellW, this.cellH * this.rows, 18);
+			fill.fill({ color: 0xff6a00, alpha: 0.18 });
+			fill.stroke({ color: 0xffcc66, width: 3, alpha: 0.35 });
+            const ring = new Graphics();
+            ring.roundRect(4, 4, this.cellW - 8, (this.cellH * this.rows) - 8, 16);
+            ring.stroke({ color: 0xffaa22, width: 8, alpha: 0.35 });
+            // Use higher alpha to simulate strong glow without blend mode dependency
+			wrap.addChild(fill);
+			wrap.addChild(ring);
+			this.reelPotentialLayer.addChild(wrap);
+			this._reelPotentialOverlays.push({ wrap, fill, ring });
+		}
 
 		// Clip reels and overlays to the frame area
 			this.frame.applyMask(this.reelViewport);
@@ -205,12 +229,28 @@ export class PixiGame {
 		this._followOrbsUpdate = null;
 		this._followingOrbs = [];
 		this._followTimeouts = [];
+		this._reelPotentialPulse = 0;
 		this.app.ticker.add((delta) => {
 			const dtMs = (typeof delta === "number" ? delta : delta?.deltaMS) || 16.7;
 			this.freeGamesEmitter.update(dtMs);
 			this.effectsManager.update(dtMs);
 			// If we are following ORB labels during a spin, update their positions
 			if (typeof this._followOrbsUpdate === 'function') { this._followOrbsUpdate(); }
+			// Pulse glow for reel potential overlays; emphasize the next-to-stop reel
+			if (Array.isArray(this._reelPotentialOverlays) && this._reelPotentialOverlays.length) {
+				this._reelPotentialPulse += dtMs * 0.009; // increased speed for more energy
+				const s = 0.5 + 0.5 * Math.sin(this._reelPotentialPulse);
+				const focus = this._orbPotential?.focus;
+				for (let i = 0; i < this._reelPotentialOverlays.length; i += 1) {
+					const ov = this._reelPotentialOverlays[i];
+					if (!ov.wrap.visible) { continue; }
+					const isFocus = (typeof focus === 'number') && (i === focus);
+					// Stronger fill on focus; slightly lower on others
+					ov.fill.alpha = isFocus ? (0.28 + 0.14 * s) : (0.16 + 0.08 * s);
+					// Additive ring pops on focus
+					ov.ring.alpha = isFocus ? (0.50 + 0.35 * s) : (0.18 + 0.16 * s);
+				}
+			}
 		});
 
 		this.setupEventListeners();
@@ -505,18 +545,90 @@ export class PixiGame {
 		const startDelays = [0, 70, 140, 210, 280];
 		const anticip = this.highlighter.anticipationDelays(result, this.engine.config);
 
+		// Initialize potential-orb highlight logic for base game (not during Hold & Spin)
+		this._initOrbPotentialHighlight(result, startDelays, loops);
+
 		const tasks = [];
 		for (let x = 0; x < this.cols; x += 1) {
-			tasks.push(this.reels[x].spinTo(
+			const p = this.reels[x].spinTo(
 				result.grid[x],
 				loops[x],
 				startDelays[x],
 				anticip[x]
-			));
+			);
+			// When each reel completes, update potential highlight state
+			p.then(() => { this._onReelStoppedForOrbPotential(x); });
+			tasks.push(p);
 		}
 
 		await Promise.all(tasks);
+		// Clear potential highlights after all reels stop
+		this._clearOrbPotentialHighlight();
 		}
+
+	// ----- Orb Feature Potential Highlight (base game) -----
+	_initOrbPotentialHighlight(result, startDelays = [], loops = []) {
+		// Skip during Hold & Spin
+		if (this.engine.holdSpin?.isActive?.()) { return; }
+		const target = this.engine.config?.holdAndSpin?.triggerCount || 5;
+		const items = result?.evaln?.orbItems || [];
+		// Only enable the new highlight behavior if we know at least 4 orbs will land
+		const totalPlannedOrbs = Array.isArray(items) ? items.length : 0;
+		if (totalPlannedOrbs < 4) {
+			this._clearOrbPotentialHighlight();
+			return; // keep previous behavior (no highlights)
+		}
+		this._orbPotential = {
+			perReel: new Array(this.cols).fill(0),
+			orbsSoFar: 0,
+			spinning: new Set(Array.from({ length: this.cols }, (_, i) => i)),
+			target,
+			startDelays: [...startDelays],
+			loops: [...loops],
+			focus: null
+		};
+		for (let i = 0; i < items.length; i += 1) {
+			const it = items[i];
+			if (typeof it.x === 'number') { this._orbPotential.perReel[it.x] += 1; }
+		}
+		this._updateOrbPotentialHighlight();
+	}
+
+	_onReelStoppedForOrbPotential(col) {
+		if (!this._orbPotential) { return; }
+		if (this._orbPotential.spinning.has(col)) {
+			this._orbPotential.spinning.delete(col);
+			this._orbPotential.orbsSoFar += (this._orbPotential.perReel[col] || 0);
+			this._updateOrbPotentialHighlight();
+		}
+	}
+
+	_updateOrbPotentialHighlight() {
+		if (!this._orbPotential) { return; }
+		const remainingReels = this._orbPotential.spinning.size;
+		const maxFromRemaining = remainingReels * this.rows;
+		const canStillReach = (this._orbPotential.orbsSoFar + maxFromRemaining) >= this._orbPotential.target;
+		// Determine which reel is likely to stop next among spinning ones
+		let focusIndex = null;
+		let bestTime = Infinity;
+		for (const x of this._orbPotential.spinning) {
+			const t = (this._orbPotential.startDelays[x] || 0) + (this._orbPotential.loops[x] || 0) * 100; // rough weighting
+			if (t < bestTime) { bestTime = t; focusIndex = x; }
+		}
+		this._orbPotential.focus = focusIndex;
+		for (let x = 0; x < this._reelPotentialOverlays.length; x += 1) {
+			const ov = this._reelPotentialOverlays[x];
+			const isSpinning = this._orbPotential.spinning.has(x);
+			ov.wrap.visible = canStillReach && isSpinning;
+		}
+	}
+
+	_clearOrbPotentialHighlight() {
+		this._orbPotential = null;
+		for (let x = 0; x < this._reelPotentialOverlays.length; x += 1) {
+			this._reelPotentialOverlays[x].visible = false;
+		}
+	}
 
     _renderOrbLabels(result) {
         if (!this.orbLabels) { return; }
