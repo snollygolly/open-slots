@@ -6,7 +6,6 @@ export class Controls {
 		this.$credit = document.getElementById("credit");
 		this.$bet = document.getElementById("bet");
 		this.$spin = document.getElementById("spin");
-		this.$auto = document.getElementById("autoplay");
 		this.$buyFeature = document.getElementById("buyFeature");
 		this.$sim = document.getElementById("sim1000");
 		this.$last = document.getElementById("lastWin");
@@ -27,20 +26,6 @@ export class Controls {
 			// spinAndRender already handles win display after animation
 			this.appendWinLog(result);
 			this.update();
-		};
-		let auto = false;
-		this.$auto.onclick = async() => {
-			auto = !auto;
-			this.$auto.textContent = auto ? "AUTO: ON" : "AUTO";
-			while (auto) {
-				if (this.engine.credits < this.engine.bet) { auto = false; break; }
-				this.clearWinLog();
-				const result = await this.game.spinAndRender();
-				// spinAndRender already handles win display after animation
-				this.appendWinLog(result);
-				this.update();
-			}
-			this.$auto.textContent = "AUTO";
 		};
 		this.$buyFeature.onclick = async() => {
 			if (!this.engine.fsm.canSpin()) { return; }
