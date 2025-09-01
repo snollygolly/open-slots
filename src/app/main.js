@@ -10,24 +10,47 @@ import { LocalWalletService } from "../services/wallet/LocalWalletService.js";
 import { ServerWalletService } from "../services/wallet/ServerWalletService.js";
 import { ApiClient } from "../services/api/ApiClient.js";
 
-const app = new Application();
-const mount = document.getElementById("game");
-await app.init({ background: "#06101c", width: 1280, height: 720, antialias: true });
-mount.appendChild(app.canvas);
+(async () => {
+	try {
+		const app = new Application();
+		const mount = document.getElementById("game");
 
-const api = new ApiClient(defaultConfig.api);
-const rng = defaultConfig.services.useServerRng ? new ServerRngService(api) : new LocalRngService(defaultConfig.rngSeed);
-const wallet = defaultConfig.services.useServerWallet ? new ServerWalletService(api, defaultConfig) : new LocalWalletService(defaultConfig);
+		await app.init({
+			background: "#06101c",
+			width: 1280,
+			height: 720,
+			antialias: true,
+			preference: "webgl"
+		});
 
-ServiceRegistry.register("api", api);
-ServiceRegistry.register("rng", rng);
-ServiceRegistry.register("wallet", wallet);
-ServiceRegistry.register("config", defaultConfig);
+		if (mount) {
+			mount.appendChild(app.canvas);
+		}
 
-const engine = new GameEngine(defaultConfig, rng, wallet);
-const game = new PixiGame(app, engine, defaultConfig);
-const controls = new Controls(engine, game);
+		const api = new ApiClient(defaultConfig.api);
+		const rng = defaultConfig.services.useServerRng ? new ServerRngService(api) : new LocalRngService(defaultConfig.rngSeed);
+		const wallet = defaultConfig.services.useServerWallet ? new ServerWalletService(api, defaultConfig) : new LocalWalletService(defaultConfig);
 
-window.engine = engine;
-window.game = game;
-window.controls = controls;
+		ServiceRegistry.register("api", api);
+		ServiceRegistry.register("rng", rng);
+		ServiceRegistry.register("wallet", wallet);
+		ServiceRegistry.register("config", defaultConfig);
+
+		const engine = new GameEngine(defaultConfig, rng, wallet);
+		const game = new PixiGame(app, engine, defaultConfig);
+		// eslint-disable-next-line no-new
+		new Controls(engine, game);
+
+		// Handy for quick debugging in the console
+		window.app = app;
+		window.engine = engine;
+		window.game = game;
+	} catch (err) {
+		// eslint-disable-next-line no-console
+		console.error("[main] init error:", err);
+		const status = document.getElementById("status");
+		if (status) {
+			status.textContent = `Init error: ${err?.message || err}`;
+		}
+	}
+})();
