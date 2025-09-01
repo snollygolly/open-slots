@@ -254,9 +254,9 @@ export class PixiGame {
 			}
 		}
 
-		this.winText.text = result.feature
-			? `${result.feature}  Win ${result.totalWin}`
-			: `Win ${result.totalWin}`;
+		// Show win amount, but exclude FREE_GAMES from the display since we have visual feedback
+		const displayFeature = result.feature && !result.feature.includes("FREE") ? `${result.feature}  ` : "";
+		this.winText.text = `${displayFeature}Win ${result.totalWin}`;
 
 		return result;
 	}
