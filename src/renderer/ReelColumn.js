@@ -50,10 +50,7 @@ export class ReelColumn {
 		this.hsCfg = opts.holdAndSpin || {};
 		// Per-cell lock scaffold (unused for base game; future Hold&Spin)
 		this.lockMask = [false, false, false];
-		// Control whether to draw orb value labels directly on tiles
-		this.enableTileOrbLabels = true;
-        // Rows (0..rows-1) that will contain landing ORBs for this column in the final result
-        this.plannedLandingOrbRows = new Set();
+		// Unified orb system - no separate label management needed
 
 		this.container = new Container();
 		this.container.x = x;
@@ -124,9 +121,6 @@ export class ReelColumn {
 		return wrap;
 	}
 
-	setPlannedLandingOrbRows(rows) {
-		this.plannedLandingOrbRows = new Set(Array.isArray(rows) ? rows : []);
-	}
 
 	// Get the orb item data for a visible row (if it's an OrbSymbol)
 	getVisibleOrbItem(row) {
