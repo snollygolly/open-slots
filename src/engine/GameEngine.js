@@ -246,7 +246,7 @@ export class GameEngine extends EventBus {
 		}
 	}
 	
-	simulateSpinOnly() {
+		simulateSpinOnly() {
 			const grid = this.math.spinReels();
 			const evaln = this.math.evaluateWays(grid);
 			let totalWin = 0;
@@ -261,8 +261,8 @@ export class GameEngine extends EventBus {
 					const denom = this.config?.denom || 1;
 					return typeof bal === 'number' ? Math.round(bal / denom) : 0;
 				};
-				const simHS = new HoldAndSpin(this.config, () => this.rngService.random(), creditForJackpot);
-				simHS.trigger(grid, evaln.orbItems);
+				const simHS = new HoldAndSpin(this.config, { rngFn: () => this.rngService.random(), claimJackpotFn: creditForJackpot });
+				simHS.trigger({ grid, orbItems: evaln.orbItems });
             let result = null;
             while (!result) {
                 let next = this.math.spinReels();
@@ -380,6 +380,11 @@ export class GameEngine extends EventBus {
 		// Complete the payment and return to idle if FSM is in a payable state  
 		if (this.fsm.isInState("PAYING") || this.fsm.isInState("EVALUATING")) {
 			this.fsm.returnToIdle();
+		}
+
+		// After completing payment and returning to idle, finalize Hold & Spin cleanup
+		if (!this.holdSpin.isActive() && typeof this.holdSpin.reset === 'function') {
+			this.holdSpin.reset();
 		}
 	}
 }

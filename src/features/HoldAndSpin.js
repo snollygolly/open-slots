@@ -15,6 +15,14 @@ export class HoldAndSpin extends BaseFeature {
 		this.totalPositions = this.gridCfg.reels * this.gridCfg.rows;
 	}
 
+	/** Spend a respin immediately when a respin starts. */
+	spendRespin() {
+		if (!this.isActive()) return this.respinsRemaining;
+		this.respinsRemaining = Math.max(0, this.respinsRemaining - 1);
+		this.emit("tick", { respins: this.respinsRemaining, orbs: this.lockedOrbs.length });
+		return this.respinsRemaining;
+	}
+
 	trigger(triggerData) {
 		const initialGrid = triggerData.grid || triggerData;
 		const startingItems = triggerData.orbItems || triggerData.startingItems;
@@ -78,11 +86,10 @@ export class HoldAndSpin extends BaseFeature {
 
 		if (newOrbCount > 0) {
 			// New orbs found - reset respins
-			this.respinsRemaining = this.cfg.respins; // Reset to 3
+			this.respinsRemaining = this.cfg.respins; // Reset to max on hit
 			this.emit("orbsAdded", { newOrbs: newOrbCount, totalOrbs: this.lockedOrbs.length, respins: this.respinsRemaining });
 		} else {
-			// No new orbs - decrement respins
-			this.respinsRemaining--;
+			// No new orbs - we already spent the respin at spin start
 			this.emit("noOrbs", { respins: this.respinsRemaining });
 		}
 
@@ -116,10 +123,6 @@ export class HoldAndSpin extends BaseFeature {
 			grandBonus: isFull && this.cfg.fullGridWinsGrand ? 1 : 0
 		};
 
-		// Reset state
-		this.respinsRemaining = 0;
-		this.lockedOrbs = [];
-
 		this.emit("complete", result);
 		return result;
 	}
@@ -135,7 +138,7 @@ export class HoldAndSpin extends BaseFeature {
 	}
 
 	isActive() {
-		return this.respinsRemaining > 0;
+		return this.active === true;
 	}
 
 	getRemainingRespins() {

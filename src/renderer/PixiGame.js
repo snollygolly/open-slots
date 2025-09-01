@@ -224,6 +224,13 @@ export class PixiGame {
 		// Clear win text unless we're in an active Hold & Spin feature
 		if (!this.engine.holdSpin?.isActive?.()) {
 			this.winText.text = "";
+		} else {
+			// Update Hold & Spin status immediately at spin start (after respin was spent)
+			const orbCount = this.engine.holdSpin.getOrbCount() || 0;
+			const respinsRemaining = this.engine.holdSpin.getRemainingRespins() || 0;
+			this.holdSpinText.text = `${orbCount} Orbs | ${respinsRemaining} Respins`;
+			this.holdSpinText.visible = true;
+			this._updateHoldWinText();
 		}
 	}
 
@@ -343,15 +350,26 @@ export class PixiGame {
 		}
 	}
 
-	async spinAndRender() {
-		// Clear visuals before starting spin
-		this.prepareForSpin();
+    async spinAndRender() {
+        // If Hold & Spin is active, spend a respin immediately on click
+        if (this.engine.holdSpin?.isActive?.() && typeof this.engine.holdSpin.spendRespin === 'function') {
+            this.engine.holdSpin.spendRespin();
+            // Reflect the decremented value right away
+            const orbCount = this.engine.holdSpin.getOrbCount() || 0;
+            const respinsRemaining = this.engine.holdSpin.getRemainingRespins() || 0;
+            this.holdSpinText.text = `${orbCount} Orbs | ${respinsRemaining} Respins`;
+            this.holdSpinText.visible = true;
+            this._updateHoldWinText();
+        }
+
+        // Clear visuals before starting spin
+        this.prepareForSpin();
 		
 		// Trigger the engine to handle the spin logic (bet deducted here)
 		const result = await this.engine.spinOnce();
 
-		// Animation only - no game logic, no wins shown yet
-		await this.animateReels(result);
+        // Animation only - no game logic, no wins shown yet
+        await this.animateReels(result);
 
 		// After animation completes, now show the results and apply win credits
 		this.renderSpinResult(result, true); // true = show wins
@@ -629,7 +647,8 @@ export class PixiGame {
             this.highlighter.show(result, "paths");
         }
         // Draw ORB value labels on top of any highlight shade
-        if (this.engine.holdSpin?.isActive?.()) {
+        const locked = typeof this.engine.holdSpin?.getLockedOrbs === 'function' ? this.engine.holdSpin.getLockedOrbs() : [];
+        if (this.engine.holdSpin?.isActive?.() || (Array.isArray(locked) && locked.length > 0)) {
             // During Hold & Spin, render persistent locked values
             this._renderHoldLockedOrbLabels();
         } else {
