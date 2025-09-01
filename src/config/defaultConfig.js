@@ -30,14 +30,14 @@ export const defaultConfig = {
 		T: [0, 0, 10, 40, 100]
 	},
 	reelStrips: [
-		["A","Q","WILD","P1","K","ORB","A","ORB","Q","P2","J","ORB","P3","A","K","SCATTER","Q","ORB","ORB","K","T","Q","P2","J","A","K","T"],
-		["Q","K","ORB","P1","A","Q","WILD","P3","K","ORB","ORB","A","SCATTER","Q","K","ORB","A","T","Q","ORB","P2","J","A","T","Q"],
-		["K","ORB","A","Q","WILD","P2","K","ORB","A","Q","T","SCATTER","K","A","ORB","Q","ORB","P3","K","ORB","Q","J","T","K"],
-		["ORB","A","Q","K","WILD","P1","ORB","A","Q","K","P2","SCATTER","J","ORB","Q","K","T","ORB","J","A","ORB","K","T","J"],
-		["A","ORB","K","J","WILD","P3","A","ORB","K","J","SCATTER","T","A","ORB","K","J","ORB","P1","A","Q","ORB","J","T","A"]
+		["A","Q","WILD","P1","K","J","A","ORB","Q","P2","J","T","P3","A","ORB","SCATTER","Q","J","A","K","T","Q","P2","ORB","A","K","T"],
+		["Q","K","J","P1","A","Q","WILD","P3","K","J","ORB","A","SCATTER","Q","K","J","A","T","Q","ORB","P2","J","A","T","ORB","Q"],
+		["K","J","A","Q","WILD","P2","K","J","ORB","Q","T","SCATTER","K","A","Q","J","P3","K","A","ORB","J","T","ORB","K"],
+		["J","A","Q","K","WILD","P1","J","ORB","Q","K","P2","SCATTER","J","A","Q","K","T","ORB","J","A","K","ORB","T","J"],
+		["A","Q","K","J","WILD","P3","A","ORB","K","J","SCATTER","T","A","Q","K","J","P1","A","ORB","K","J","ORB","T","A"]
 	],
 	holdAndSpin: {
-		triggerCount: 6,
+		triggerCount: 5,
 		respins: 3,
 		fullGridWinsGrand: true,
 		creditValues: [50, 100, 150, 200, 250, 500, 1000, 2500],
