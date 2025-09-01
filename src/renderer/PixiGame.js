@@ -145,6 +145,15 @@ export class PixiGame {
 			for (let i = 0; i < this.cols; i += 1) {
 				this.reels[i].setIdleColumn(boot[i]);
 			}
+			// Also render initial ORB labels (if any) so orbs aren't label-less on load
+			try {
+				const evaln = this.engine.math.evaluateWays(boot);
+				this._renderOrbLabels({ evaln });
+				if (this.overlayViewport && this.orbLabels) {
+					this.orbLabels.zIndex = 10;
+					this.highlightLayer.zIndex = 5;
+				}
+			} catch (e) { /* ignore */ }
 		});
 
 		/* ORB meter centered above the reels */
@@ -193,10 +202,15 @@ export class PixiGame {
 		this.freeGamesEmitter.container.visible = false;
 		
 		// Setup ticker updates
+		this._followOrbsUpdate = null;
+		this._followingOrbs = [];
+		this._followTimeouts = [];
 		this.app.ticker.add((delta) => {
 			const dtMs = (typeof delta === "number" ? delta : delta?.deltaMS) || 16.7;
 			this.freeGamesEmitter.update(dtMs);
 			this.effectsManager.update(dtMs);
+			// If we are following ORB labels during a spin, update their positions
+			if (typeof this._followOrbsUpdate === 'function') { this._followOrbsUpdate(); }
 		});
 
 		this.setupEventListeners();
@@ -243,6 +257,60 @@ export class PixiGame {
 		// Pure rendering - just display the grid result, no wins yet
 		this.renderSpinResult(result, false); // false = don't show wins yet
 	}
+
+	// Create a text label for an ORB item
+	_createOrbTextForItem(it) {
+		const pgMeta = this.config?.progressives?.meta || {};
+		let label = "";
+		if (it.type === "C") { label = `${it.amount}`; }
+		else if (it.type === "JP") { label = (pgMeta[it.id]?.label || it.id); }
+		const t = new Text({ text: label, style: new TextStyle({ fill: "#fff", fontFamily: "system-ui", fontSize: 26, fontWeight: "800", stroke: { color: 0x031421, width: 4 } }) });
+		t.anchor.set(0.5);
+		return t;
+	}
+
+	// During base-game spin animation, make ORB labels move with their landing symbols
+	_startOrbFollowDuringSpin(result, startDelays = [0, 70, 140, 210, 280]) {
+		if (!this.orbLabels) { return; }
+		this.orbLabels.removeChildren();
+		const items = result?.evaln?.orbItems || [];
+		this._followingOrbs = [];
+		for (let i = 0; i < items.length; i += 1) {
+			const it = items[i];
+			if (typeof it.x !== 'number' || typeof it.y !== 'number') { continue; }
+			const text = this._createOrbTextForItem(it);
+			// Position immediately at current strip position; reveal when reel begins
+			const col = it.x; const row = it.y;
+			const stripY = this.reels[col]?.strip?.y || 0;
+			const cx = (col * this.cellW) + (this.cellW / 2);
+			const cy = stripY + ((3 + row) * this.cellH) + (this.cellH / 2);
+			text.position.set(cx, cy);
+			text.visible = false;
+			this.orbLabels.addChild(text);
+			this._followingOrbs.push({ it, text });
+            const delay = startDelays[col] || 0;
+            const tid = setTimeout(() => { text.visible = true; }, delay);
+            this._followTimeouts.push(tid);
+		}
+		this._followOrbsUpdate = () => {
+			for (let i = 0; i < (this._followingOrbs?.length || 0); i += 1) {
+				const f = this._followingOrbs[i];
+				const col = f.it.x;
+				const row = f.it.y;
+				const stripY = this.reels[col]?.strip?.y || 0;
+				const cx = (col * this.cellW) + (this.cellW / 2);
+				const cy = stripY + ((3 + row) * this.cellH) + (this.cellH / 2);
+				f.text.position.set(cx, cy);
+			}
+		};
+	}
+
+    _stopOrbFollowDuringSpin() {
+        this._followOrbsUpdate = null;
+        if (Array.isArray(this._followTimeouts)) {
+            while (this._followTimeouts.length) { clearTimeout(this._followTimeouts.pop()); }
+        }
+    }
 
 	onFeatureStart(data) {
 		// Render feature start effects - delegate to effects manager
@@ -369,12 +437,35 @@ export class PixiGame {
 
         // Clear visuals before starting spin
         this.prepareForSpin();
-		
-		// Trigger the engine to handle the spin logic (bet deducted here)
-		const result = await this.engine.spinOnce();
+
+        // Trigger the engine to handle the spin logic (bet deducted here)
+        const result = await this.engine.spinOnce();
+
+        // Keep ORB labels visible and moving with reels during the spin animation
+        const lockedBeforeAnim = typeof this.engine.holdSpin?.getLockedOrbs === 'function' ? this.engine.holdSpin.getLockedOrbs() : [];
+        if (this.engine.holdSpin?.isActive?.() || (Array.isArray(lockedBeforeAnim) && lockedBeforeAnim.length > 0)) {
+            // During Hold & Spin, show persistent locked values
+            this._renderHoldLockedOrbLabels();
+            this._updateHoldWinText();
+            const orbCount = this.engine.holdSpin.getOrbCount?.() || 0;
+            const respinsRemaining = this.engine.holdSpin.getRemainingRespins?.() || 0;
+            this.holdSpinText.text = `${orbCount} Orbs | ${respinsRemaining} Respins`;
+            this.holdSpinText.visible = true;
+        } else {
+            // Base game: follow landing orbs throughout the spin
+            const startDelays = [0, 70, 140, 210, 280];
+            this._startOrbFollowDuringSpin(result, startDelays);
+            if (this.overlayViewport && this.orbLabels) {
+                this.orbLabels.zIndex = 10;
+                this.highlightLayer.zIndex = 5;
+            }
+        }
 
         // Animation only - no game logic, no wins shown yet
         await this.animateReels(result);
+
+        // Stop following; labels have reached their landing positions
+        this._stopOrbFollowDuringSpin();
 
 		// After animation completes, now show the results and apply win credits
 		this.renderSpinResult(result, true); // true = show wins
@@ -509,11 +600,26 @@ export class PixiGame {
 	}
 
 
-	async spinAndRenderWithFeature(featureType) {
-		// Clear visuals before starting spin (same as regular spin)
-		this.prepareForSpin();
-		
-		const result = await this.engine.buyFeature(featureType);
+    async spinAndRenderWithFeature(featureType) {
+        // Clear visuals before starting spin (same as regular spin)
+        this.prepareForSpin();
+        
+        const result = await this.engine.buyFeature(featureType);
+
+        // For bought features, Hold & Spin becomes active; show persistent locked labels
+        const lockedPre = typeof this.engine.holdSpin?.getLockedOrbs === 'function' ? this.engine.holdSpin.getLockedOrbs() : [];
+        if (this.engine.holdSpin?.isActive?.() || (Array.isArray(lockedPre) && lockedPre.length > 0)) {
+            this._renderHoldLockedOrbLabels();
+            this._updateHoldWinText();
+            const orbCount = this.engine.holdSpin.getOrbCount?.() || 0;
+            const respinsRemaining = this.engine.holdSpin.getRemainingRespins?.() || 0;
+            this.holdSpinText.text = `${orbCount} Orbs | ${respinsRemaining} Respins`;
+            this.holdSpinText.visible = true;
+            if (this.overlayViewport && this.orbLabels) {
+                this.orbLabels.zIndex = 10;
+                this.highlightLayer.zIndex = 5;
+            }
+        }
 
 		const loops = [9, 10, 11, 12, 13];
 		const startDelays = [0, 70, 140, 210, 280];
