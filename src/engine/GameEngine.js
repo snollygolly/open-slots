@@ -265,6 +265,8 @@ export class GameEngine extends EventBus {
 				simHS.trigger({ grid, orbItems: evaln.orbItems });
             let result = null;
             while (!result) {
+                // Spend a respin at the start of each respin cycle (mirror runtime flow)
+                if (typeof simHS.spendRespin === 'function') { simHS.spendRespin(); }
                 let next = this.math.spinReels();
                 next = simHS.applyLockedOrbsToGrid(next);
                 result = simHS.processRespin(next);
