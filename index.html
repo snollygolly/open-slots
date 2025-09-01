@@ -5,15 +5,23 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>Open Slots</title>
 	<style>
-		html, body, #game { margin:0; padding:0; width:100%; height:100%; background:#08121f; }
-		.ui { position:absolute; left:0; right:0; bottom:0; padding:8px 12px; color:#fff; font-family:system-ui, sans-serif; }
-		.row { display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
-		button { font-size:16px; padding:8px 16px; }
-		.meters { display:flex; gap:8px; flex-wrap:wrap; }
-		.meter { background:#13233a; padding:6px 10px; border-radius:6px; }
-		#winlog { margin-top:6px; max-height:120px; overflow:auto; font-size:14px; opacity:0.95; }
-		#winlog .line { display:flex; gap:10px; padding:2px 0; border-bottom:1px solid #0e2036; }
-		#winlog .amt { margin-left:auto; font-weight:700; }
+			html, body { margin:0; padding:0; width:100%; height:100%; }
+			#game { width:100%; height:100dvh; background:#08121f; position:relative; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+			.ui { position:absolute; left:0; right:0; bottom:0; padding:8px 12px; color:#fff; font-family:system-ui, sans-serif; }
+			.row { display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+			button { font-size:16px; padding:8px 16px; }
+			.meters { display:flex; gap:8px; flex-wrap:wrap; }
+			.meter { background:#13233a; padding:6px 10px; border-radius:6px; }
+			#winlog { margin-top:6px; max-height:120px; overflow:auto; font-size:14px; opacity:0.95; }
+			#winlog .line { display:flex; gap:10px; padding:2px 0; border-bottom:1px solid #0e2036; }
+			#winlog .amt { margin-left:auto; font-weight:700; }
+			/* Scale the PIXI canvas to fit viewport while preserving 16:9 */
+			#game canvas { width: min(100vw, calc(100dvh * 16 / 9)); height: min(100dvh, calc(100vw * 9 / 16)); display:block; }
+			@media (max-width: 600px) {
+				.ui { padding: 10px; }
+				button { font-size: 15px; padding: 10px 14px; }
+				.row { gap: 10px; }
+			}
 	</style>
 </head>
 <body>
