@@ -29,7 +29,9 @@ export class PixiGame {
 		this.cellH = 140;
 		this.cols = config.grid.reels;
 		this.rows = config.grid.rows;
-		this.offsetX = 80;
+		// Center reels horizontally within the 1280x720 stage
+		const gridW = this.cellW * this.cols;
+		this.offsetX = Math.floor(((this.app.screen?.width || 1280) - gridW) / 2);
 		// Move reels down a bit to make room for the progressive meter above
 		this.offsetY = 140;
 

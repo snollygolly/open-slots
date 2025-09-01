@@ -8,7 +8,10 @@
 			html, body { margin:0; padding:0; width:100%; height:100%; }
 			#game { width:100%; height:100dvh; background:#08121f; position:relative; display:flex; align-items:center; justify-content:center; overflow:hidden; }
 			.ui { position:absolute; left:0; right:0; bottom:0; padding:8px 12px; color:#fff; font-family:system-ui, sans-serif; }
+			.ui-top { top:0; bottom:auto; }
+			.ui-top .meters { justify-content: center; }
 			.row { display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+			.ui > .row { justify-content: center; }
 			button { font-size:16px; padding:8px 16px; }
 			.meters { display:flex; gap:8px; flex-wrap:wrap; }
 			.meter { background:#13233a; padding:6px 10px; border-radius:6px; }
@@ -26,7 +29,12 @@
 </head>
 <body>
 	<div id="game"></div>
+	<div class="ui ui-top">
+		<div class="row meters" id="meters"></div>
+	</div>
 	<div class="ui">
+		<div id="status"></div>
+		<div id="winlog"></div>
 		<div class="row">
 			<div>Credit: <span id="credit">0</span></div>
 			<div>Bet: <span id="bet">100</span></div>
@@ -36,9 +44,6 @@
 			<button id="sim1000">Sim 1k</button>
 			<div>Last Win: <span id="lastWin">0</span></div>
 		</div>
-		<div class="row meters" id="meters"></div>
-		<div id="status"></div>
-		<div id="winlog"></div>
 	</div>
 	<!-- NOTE: relative path so the built assets work under /<repo>/ on Pages -->
 	<script type="module" src="./src/app/main.js"></script>
