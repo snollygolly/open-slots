@@ -104,6 +104,8 @@ export class PixiGame {
 
 	prepareForSpin() {
 		this.highlighter.reset();
+		// Clear HUD win text at spin start
+		this.winText.text = "";
 	}
 
 	async spinAndRender() {
