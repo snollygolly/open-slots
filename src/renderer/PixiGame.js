@@ -301,65 +301,24 @@ export class PixiGame {
 	}
 
 	async _renderHoldAndSpinRespin(result) {
-		// For hold and spin respins, we need to identify which positions are locked
-		// and only animate the non-locked positions
-		const lockedPositions = this.engine.holdSpin.getLockedPositions();
-		
-		// Create a modified animation plan that skips locked positions
+		// All reels spin at the same speed - no special handling for locked positions
 		const loops = [9, 10, 11, 12, 13];
 		const startDelays = [0, 70, 140, 210, 280];
 		const anticip = this.highlighter.anticipationDelays(result, this.engine.config);
 
 		const tasks = [];
 		for (let x = 0; x < this.cols; x += 1) {
-			// Check if this entire reel has locked positions
-			const hasLockedPositions = Array.from(lockedPositions).some(pos => pos.startsWith(`${x},`));
-			
-			if (hasLockedPositions) {
-				// This reel has locked orbs - handle it specially
-				tasks.push(this._spinReelWithLockedPositions(x, result.grid[x], loops[x], startDelays[x], anticip[x], lockedPositions));
-			} else {
-				// Normal reel spin
-				tasks.push(this.reels[x].spinTo(
-					result.grid[x],
-					loops[x],
-					startDelays[x],
-					anticip[x]
-				));
-			}
+			// All reels spin exactly the same way
+			tasks.push(this.reels[x].spinTo(
+				result.grid[x],
+				loops[x],
+				startDelays[x],
+				anticip[x]
+			));
 		}
 		await Promise.all(tasks);
 	}
 
-	async _spinReelWithLockedPositions(reelIndex, finalColumn, loops, startDelay, extraStop, lockedPositions) {
-		// For reels with locked positions, we'll do a shorter spin animation
-		// and immediately set the locked positions to ORB symbols
-		
-		// First, get the current column state
-		const currentColumn = [...finalColumn];
-		
-		// Override locked positions with ORBs
-		for (let row = 0; row < this.rows; row++) {
-			const positionKey = `${reelIndex},${row}`;
-			if (lockedPositions.has(positionKey)) {
-				currentColumn[row] = "ORB";
-			}
-		}
-		
-		// Do a very short spin animation for visual effect, then set to final state
-		return new Promise((resolve) => {
-			setTimeout(async () => {
-				// Short spin with fewer loops for locked reels
-				await this.reels[reelIndex].spinTo(
-					currentColumn,
-					Math.max(1, Math.floor(loops / 3)), // Shorter spin
-					0, // No extra delay
-					extraStop / 2 // Less anticipation
-				);
-				resolve();
-			}, startDelay);
-		});
-	}
 
 	async spinAndRenderWithFeature(featureType) {
 		const result = await this.engine.buyFeature(featureType);
