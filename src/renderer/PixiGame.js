@@ -91,9 +91,9 @@ export class PixiGame {
 				fontWeight: "700"
 			})
 		});
-		// Position above win text, centered horizontally
-		const holdSpinTextY = this.offsetY + (this.cellH * this.rows) - 10;
-		this.holdSpinText.anchor.set(0.5, 1); // Center-aligned anchor
+		// Position aligned with win text, centered horizontally  
+		const holdSpinTextY = this.offsetY + (this.cellH * this.rows) + 20;
+		this.holdSpinText.anchor.set(0.5, 0); // Center-aligned anchor
 		this.holdSpinText.position.set(this.offsetX + (this.cellW * this.cols) / 2, holdSpinTextY);
 		this.holdSpinText.zIndex = 40;
 		this.holdSpinText.visible = false;
@@ -293,8 +293,9 @@ export class PixiGame {
 			}
 		}
 
-		// Show win amount, but exclude FREE_GAMES from the display since we have visual feedback
-		const displayFeature = result.feature && !result.feature.includes("FREE") ? `${result.feature}  ` : "";
+		// Show win amount, but exclude features that have their own visual feedback
+		const excludedFeatures = ["FREE_GAMES", "FREE_GAMES_TRIGGER", "HOLD_AND_SPIN_START", "HOLD_AND_SPIN_RESPIN", "HOLD_AND_SPIN_END"];
+		const displayFeature = result.feature && !excludedFeatures.includes(result.feature) ? `${result.feature}  ` : "";
 		this.winText.text = `${displayFeature}Win ${result.totalWin}`;
 
 		return result;
@@ -355,8 +356,9 @@ export class PixiGame {
 			console.log(`[PixiGame] Hold and Spin started with ${result.hold.orbCount} orbs, ${result.hold.respinsRemaining} respins remaining`);
 		}
 
-		// Show win amount for bought features
-		const displayFeature = result.feature ? `${result.feature}  ` : "";
+		// Show win amount for bought features, but exclude features that have their own visual feedback
+		const excludedFeatures = ["FREE_GAMES", "FREE_GAMES_TRIGGER", "HOLD_AND_SPIN_START", "HOLD_AND_SPIN_RESPIN", "HOLD_AND_SPIN_END"];
+		const displayFeature = result.feature && !excludedFeatures.includes(result.feature) ? `${result.feature}  ` : "";
 		this.winText.text = `${displayFeature}Win ${result.totalWin}`;
 
 		return result;
