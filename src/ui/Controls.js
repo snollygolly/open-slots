@@ -95,7 +95,13 @@ export class Controls {
 			const jpText = Object.keys(jackpotHits).filter(jp => jackpotHits[jp] > 0).map(jp => `${jp}:${jackpotHits[jp]}`).join(' ') || 'None';
 			console.log(`[Sim] Max orbs seen: ${maxOrbs}, Trigger needs: ${this.engine.config.holdAndSpin.triggerCount}`);
 			console.log(`[Sim] Orb distribution:`, orbCounts);
-			this.$last.textContent = `Sim RTP ${((paid / wagered) * 100).toFixed(2)}% | Hit ${(hits / n * 100).toFixed(1)}% | FG ${freeGamesTriggers}x (${totalFreeGamesPlayed}) | H&S ${orbFeatures}x (base ${maxOrbs}) | JP ${jpText}`;
+			// Show simulation summary in the win results log instead of next to the button
+			const summary = `Sim RTP ${((paid / wagered) * 100).toFixed(2)}% | Hit ${(hits / n * 100).toFixed(1)}% | FG ${freeGamesTriggers}x (${totalFreeGamesPlayed}) | H&S ${orbFeatures}x (base ${maxOrbs}) | JP ${jpText}`;
+			const row = document.createElement("div"); row.className = "line";
+			const left = document.createElement("div"); left.textContent = summary;
+			row.appendChild(left);
+			this.$winlog.prepend(row);
+			while (this.$winlog.children.length > 20) { this.$winlog.removeChild(this.$winlog.lastChild); }
 		};
 		this.updateMeters();
 	}
