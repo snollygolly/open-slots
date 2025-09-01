@@ -42,10 +42,16 @@ export class Controls {
 			const n = 1000; let wagered = 0; let paid = 0; let hits = 0;
 			let freeGamesTriggers = 0; let totalFreeGamesPlayed = 0; let orbFeatures = 0;
 			let jackpotHits = { MINI: 0, MINOR: 0, MAJOR: 0, GRAND: 0 };
+			let maxOrbs = 0; let orbCounts = {};
 			
 			for (let i = 0; i < n; i += 1) {
 				const r = this.game.engine.simulateSpinOnly();
 				wagered += this.engine.bet; paid += r.totalWin; if (r.totalWin > 0) { hits += 1; }
+				
+				// Track orb statistics
+				const orbCount = r.evaln?.orbs || 0;
+				maxOrbs = Math.max(maxOrbs, orbCount);
+				orbCounts[orbCount] = (orbCounts[orbCount] || 0) + 1;
 				
 				if (r.feature === "FREE_GAMES_TRIGGER") {
 					freeGamesTriggers += 1;
@@ -63,7 +69,9 @@ export class Controls {
 			}
 			
 			const jpText = Object.keys(jackpotHits).filter(jp => jackpotHits[jp] > 0).map(jp => `${jp}:${jackpotHits[jp]}`).join(' ') || 'None';
-			this.$last.textContent = `Sim RTP ${((paid / wagered) * 100).toFixed(2)}% Hit ${(hits / n * 100).toFixed(1)}% | FG: ${freeGamesTriggers}x (${totalFreeGamesPlayed} spins) | Orb: ${orbFeatures} | JP: ${jpText}`;
+			console.log(`[Sim] Max orbs seen: ${maxOrbs}, Trigger needs: ${this.engine.config.holdAndSpin.triggerCount}`);
+			console.log(`[Sim] Orb distribution:`, orbCounts);
+			this.$last.textContent = `Sim RTP ${((paid / wagered) * 100).toFixed(2)}% Hit ${(hits / n * 100).toFixed(1)}% | FG: ${freeGamesTriggers}x (${totalFreeGamesPlayed} spins) | Orb: ${orbFeatures} (max: ${maxOrbs}) | JP: ${jpText}`;
 		};
 		this.updateMeters();
 	}
