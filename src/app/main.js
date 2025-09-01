@@ -5,10 +5,7 @@ import { PixiGame } from "../renderer/PixiGame.js";
 import { Controls } from "../ui/Controls.js";
 import { GameEngine } from "../engine/GameEngine.js";
 import { LocalRngService } from "../services/rng/LocalRngService.js";
-import { ServerRngService } from "../services/rng/ServerRngService.js";
 import { LocalWalletService } from "../services/wallet/LocalWalletService.js";
-import { ServerWalletService } from "../services/wallet/ServerWalletService.js";
-import { ApiClient } from "../services/api/ApiClient.js";
 
 (async () => {
 	try {
@@ -27,11 +24,9 @@ import { ApiClient } from "../services/api/ApiClient.js";
 			mount.appendChild(app.canvas);
 		}
 
-		const api = new ApiClient(defaultConfig.api);
-		const rng = defaultConfig.services.useServerRng ? new ServerRngService(api) : new LocalRngService(defaultConfig.rngSeed);
-		const wallet = defaultConfig.services.useServerWallet ? new ServerWalletService(api, defaultConfig) : new LocalWalletService(defaultConfig);
+		const rng = new LocalRngService(defaultConfig.rngSeed);
+		const wallet = new LocalWalletService(defaultConfig);
 
-		ServiceRegistry.register("api", api);
 		ServiceRegistry.register("rng", rng);
 		ServiceRegistry.register("wallet", wallet);
 		ServiceRegistry.register("config", defaultConfig);
