@@ -5,6 +5,7 @@ export class Controls {
 		this.$bet = document.getElementById("bet");
 		this.$spin = document.getElementById("spin");
 		this.$auto = document.getElementById("autoplay");
+		this.$buyFeature = document.getElementById("buyFeature");
 		this.$sim = document.getElementById("sim1000");
 		this.$last = document.getElementById("lastWin");
 		this.$meters = document.getElementById("meters");
@@ -37,6 +38,27 @@ export class Controls {
 				this.update();
 			}
 			this.$auto.textContent = "AUTO";
+		};
+		this.$buyFeature.onclick = async() => {
+			if (this.engine.spinning) { return; }
+			const featureCost = 10000;
+			if (this.engine.credits < featureCost) {
+				this.$status.textContent = "Insufficient credits to buy feature!";
+				setTimeout(() => { this.$status.textContent = "Ready"; }, 2000);
+				return;
+			}
+			
+			// Deduct the feature cost
+			this.engine.credits = this.engine.wallet.deductCredits(featureCost);
+			this.engine.emit("balance", null);
+			this.update();
+			
+			this.clearWinLog();
+			const result = await this.game.spinAndRenderWithFeature("HOLD_AND_SPIN");
+			this.engine.applyWinCredits(result);
+			this.game.showWins(result);
+			this.appendWinLog(result);
+			this.update();
 		};
 		this.$sim.onclick = async() => {
 			const n = 1000; let wagered = 0; let paid = 0; let hits = 0;

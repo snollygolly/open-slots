@@ -1,6 +1,7 @@
 import { EventBus } from "../core/EventBus.js";
 import { GameMath } from "./GameMath.js";
 import { FreeGames } from "../features/FreeGames.js";
+import { HoldAndSpin } from "../features/HoldAndSpin.js";
 
 export class GameEngine extends EventBus {
 	constructor(config, rngService, walletService) {
@@ -13,6 +14,7 @@ export class GameEngine extends EventBus {
 		this.lastWin = 0;
 		this.spinning = false;
 		this.free = new FreeGames(config);
+		this.holdSpin = new HoldAndSpin(config, () => this.rngService.random());
 		this.math = new GameMath(config, () => this.rngService.random());
 		this.bet = config.bet;
 		this.emit("balance", null);
@@ -24,43 +26,92 @@ export class GameEngine extends EventBus {
 		this.spinning = true;
 		this.emit("spinStart");
 		try {
-			const wager = this.free.isActive() ? 0 : this.bet;
+			// Determine wager (no charge during hold and spin respins or free games)
+			const wager = (this.free.isActive() || this.holdSpin.isActive()) ? 0 : this.bet;
 			if (wager > 0) {
 				this.credits = this.wallet.deductCredits(wager);
 				this.wallet.contributeToMeters(this.bet);
 				this.emit("balance", null);
 				this.emit("progressives", null);
 			}
-			const grid = this.math.spinReels();
-			const evaln = this.math.evaluateWays(grid);
+
+			let grid = this.math.spinReels();
+			let evaln = this.math.evaluateWays(grid);
 			let totalWin = 0;
 			let feature = null;
 			let hold = null;
 			const fgCfg = this.config.freeGames;
 			const hsCfg = this.config.holdAndSpin;
-			if (evaln.orbs >= hsCfg.triggerCount) {
-				const startOrbs = []; for (let i = 0; i < evaln.orbs; i += 1) { startOrbs.push({ type: "C", amount: 50 }); }
-				hold = this.math.playHoldAndSpin(startOrbs, this.bet, (id) => this.wallet.takeJackpot(id));
-				totalWin += hold.sumCredits;
-				feature = "HOLD_AND_SPIN";
+
+			// Handle hold and spin state
+			if (this.holdSpin.isActive()) {
+				// We're in a hold and spin - apply locked orbs to the new grid first
+				grid = this.holdSpin.applyLockedOrbsToGrid(grid);
+				// Re-evaluate with locked orbs in place
+				evaln = this.math.evaluateWays(grid);
+				
+				// Process the respin
+				const holdResult = this.holdSpin.processRespin(grid);
+				if (holdResult) {
+					// Hold and spin completed
+					totalWin = holdResult.totalWin;
+					hold = holdResult;
+					feature = "HOLD_AND_SPIN_END";
+				} else {
+					// Continue with more respins
+					const newOrbsThisSpin = this.holdSpin.getOrbCount() - (hold?.orbCount || this.holdSpin.getOrbCount());
+					feature = "HOLD_AND_SPIN_RESPIN";
+					hold = {
+						respinsRemaining: this.holdSpin.getRemainingRespins(),
+						orbCount: this.holdSpin.getOrbCount(),
+						newOrbs: Math.max(0, newOrbsThisSpin)
+					};
+				}
+			} else if (evaln.orbs >= hsCfg.triggerCount && !this.free.isActive()) {
+				// Start new hold and spin
+				this.holdSpin.trigger(grid);
+				feature = "HOLD_AND_SPIN_START";
+				hold = {
+					respinsRemaining: this.holdSpin.getRemainingRespins(),
+					orbCount: this.holdSpin.getOrbCount(),
+					triggeredBy: evaln.orbs
+				};
 				this.emit("featureStart", feature);
-			} else if (evaln.scatters >= fgCfg.triggerScatters) {
+			} else if (evaln.scatters >= fgCfg.triggerScatters && !this.holdSpin.isActive()) {
+				// Start free games (not during hold and spin)
 				this.free.trigger();
 				feature = "FREE_GAMES_TRIGGER";
 				this.emit("featureStart", feature);
 			} else {
+				// Regular spin
 				totalWin += evaln.lineWin;
 			}
-			if (this.free.isActive() && feature !== "HOLD_AND_SPIN") {
+
+			// Apply free games multiplier (but not during hold and spin)
+			if (this.free.isActive() && !this.holdSpin.isActive()) {
 				let bonusBoost = 0;
 				if (Math.random() < fgCfg.extraWildChance) { bonusBoost = Math.floor(10 + Math.random() * 40); }
 				const boost = Math.round((evaln.lineWin + bonusBoost) * fgCfg.multiplier);
 				totalWin += boost;
 				this.free.consume();
-				feature = "FREE_GAMES";
+				feature = feature || "FREE_GAMES";
 			}
+
 			this.lastWin = totalWin;
-			const result = { grid, evaln, totalWin, feature, hold, freeGames: this.free.remaining, wager };
+			const result = { 
+				grid, 
+				evaln, 
+				totalWin, 
+				feature, 
+				hold, 
+				freeGames: this.free.remaining,
+				holdAndSpin: this.holdSpin.isActive() ? {
+					active: true,
+					respinsRemaining: this.holdSpin.getRemainingRespins(),
+					orbCount: this.holdSpin.getOrbCount()
+				} : null,
+				wager 
+			};
 			this.emit("spinEnd", result);
 			return result;
 		} finally {
@@ -88,6 +139,75 @@ export class GameEngine extends EventBus {
 		}
 		const wager = this.bet;
 		return { grid, evaln, totalWin, feature, hold, wager };
+	}
+
+	async buyFeature(featureType) {
+		if (this.spinning) { return null; }
+		this.spinning = true;
+		this.emit("spinStart");
+		try {
+			// Force a specific feature result without charging bet
+			let grid = this.math.spinReels();
+			let evaln = this.math.evaluateWays(grid);
+			let totalWin = 0;
+			let feature = null;
+			let hold = null;
+
+			if (featureType === "HOLD_AND_SPIN") {
+				// Force the grid to have at least 6 orbs visibly
+				const triggerCount = this.config.holdAndSpin.triggerCount;
+				const currentOrbs = evaln.orbs;
+				
+				if (currentOrbs < triggerCount) {
+					// Replace some symbols with ORBs to reach the trigger count
+					const orbsNeeded = triggerCount - currentOrbs;
+					let orbsAdded = 0;
+					
+					// Go through the grid and replace non-ORB, non-SCATTER, non-WILD symbols with ORBs
+					for (let reel = 0; reel < this.config.grid.reels && orbsAdded < orbsNeeded; reel++) {
+						for (let row = 0; row < this.config.grid.rows && orbsAdded < orbsNeeded; row++) {
+							const currentSymbol = grid[reel][row];
+							if (currentSymbol !== "ORB" && currentSymbol !== "SCATTER" && currentSymbol !== "WILD") {
+								grid[reel][row] = "ORB";
+								orbsAdded++;
+							}
+						}
+					}
+					
+					// Re-evaluate with the modified grid
+					evaln = this.math.evaluateWays(grid);
+				}
+
+				this.holdSpin.trigger(grid);
+				feature = "HOLD_AND_SPIN_START";
+				hold = {
+					respinsRemaining: this.holdSpin.getRemainingRespins(),
+					orbCount: this.holdSpin.getOrbCount(),
+					triggeredBy: evaln.orbs
+				};
+				this.emit("featureStart", feature);
+			}
+
+			this.lastWin = totalWin;
+			const result = { 
+				grid, 
+				evaln, 
+				totalWin, 
+				feature, 
+				hold, 
+				freeGames: this.free.remaining,
+				holdAndSpin: this.holdSpin.isActive() ? {
+					active: true,
+					respinsRemaining: this.holdSpin.getRemainingRespins(),
+					orbCount: this.holdSpin.getOrbCount()
+				} : null,
+				wager: 0 // No wager for bought features
+			};
+			this.emit("spinEnd", result);
+			return result;
+		} finally {
+			this.spinning = false;
+		}
 	}
 
 	applyWinCredits(result) {

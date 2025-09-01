@@ -81,6 +81,24 @@ export class PixiGame {
 		this.freeGamesText.visible = false;
 		this.stage.addChild(this.freeGamesText);
 
+		// Hold and spin text (hidden by default)
+		this.holdSpinText = new Text({
+			text: "",
+			style: new TextStyle({
+				fill: "#ff6600", // Orange color for hold and spin
+				fontFamily: "system-ui",
+				fontSize: 28,
+				fontWeight: "700"
+			})
+		});
+		// Position above win text, centered horizontally
+		const holdSpinTextY = this.offsetY + (this.cellH * this.rows) - 10;
+		this.holdSpinText.anchor.set(0.5, 1); // Center-aligned anchor
+		this.holdSpinText.position.set(this.offsetX + (this.cellW * this.cols) / 2, holdSpinTextY);
+		this.holdSpinText.zIndex = 40;
+		this.holdSpinText.visible = false;
+		this.stage.addChild(this.holdSpinText);
+
 		this.reels = [];
 		for (let x = 0; x < this.cols; x += 1) {
 			const reel = new ReelColumn(
@@ -178,20 +196,26 @@ export class PixiGame {
 	async spinAndRender() {
 		const result = await this.engine.spinOnce();
 
-		const loops = [9, 10, 11, 12, 13];
-		const startDelays = [0, 70, 140, 210, 280];
-		const anticip = this.highlighter.anticipationDelays(result, this.engine.config);
+		// Handle hold and spin respins differently - locked orbs don't spin
+		if (result.holdAndSpin?.active && result.feature === "HOLD_AND_SPIN_RESPIN") {
+			await this._renderHoldAndSpinRespin(result);
+		} else {
+			// Normal spin animation
+			const loops = [9, 10, 11, 12, 13];
+			const startDelays = [0, 70, 140, 210, 280];
+			const anticip = this.highlighter.anticipationDelays(result, this.engine.config);
 
-		const tasks = [];
-		for (let x = 0; x < this.cols; x += 1) {
-			tasks.push(this.reels[x].spinTo(
-				result.grid[x],
-				loops[x],
-				startDelays[x],
-				anticip[x]
-			));
+			const tasks = [];
+			for (let x = 0; x < this.cols; x += 1) {
+				tasks.push(this.reels[x].spinTo(
+					result.grid[x],
+					loops[x],
+					startDelays[x],
+					anticip[x]
+				));
+			}
+			await Promise.all(tasks);
 		}
-		await Promise.all(tasks);
 
 		// Debug: log what features we're seeing
 		if (result.feature) {
@@ -207,12 +231,27 @@ export class PixiGame {
 		}
 
 		// Handle different features
-		if (result.feature === "HOLD_AND_SPIN") {
-			// ORB feature triggered - reset the meter
+		if (result.feature === "HOLD_AND_SPIN_START") {
+			// Hold and spin starting - trigger meter animation and show status
 			this.orbMeter.triggerTransition();
 			this._spinsSinceLastOrb = 0;
 			this._orbProgress = 0;
 			this.orbMeter.setProgress01(0);
+			this.holdSpinText.text = `${result.hold.orbCount} Orbs | ${result.hold.respinsRemaining} Respins`;
+			this.holdSpinText.visible = true;
+			console.log(`[PixiGame] Hold and Spin started with ${result.hold.orbCount} orbs, ${result.hold.respinsRemaining} respins remaining`);
+		} else if (result.feature === "HOLD_AND_SPIN_RESPIN") {
+			this.holdSpinText.text = `${result.hold.orbCount} Orbs | ${result.hold.respinsRemaining} Respins`;
+			if (result.hold.newOrbs > 0) {
+				this.holdSpinText.text += ` (+${result.hold.newOrbs})`;
+			}
+			console.log(`[PixiGame] Hold and Spin respin - ${result.hold.newOrbs} new orbs, ${result.hold.orbCount} total, ${result.hold.respinsRemaining} respins remaining`);
+		} else if (result.feature === "HOLD_AND_SPIN_END") {
+			this.holdSpinText.visible = false;
+			console.log(`[PixiGame] Hold and Spin ended - won ${result.totalWin} with ${result.hold.orbCount} orbs`);
+			if (result.hold.isFull) {
+				console.log(`[PixiGame] Full grid bonus awarded!`);
+			}
 		} else if (result.feature && result.feature.includes("FREE")) {
 			// Free games detected - but only handle if NOT already in free games OR this is a retrigger
 			if (this._freeGamesRemaining === 0) {
@@ -230,8 +269,8 @@ export class PixiGame {
 				}
 			}
 		} else {
-			// No special feature - advance the orb meter (only if not in free games)
-			if (this._freeGamesRemaining === 0) {
+			// No special feature - advance the orb meter (only if not in free games and not in hold and spin)
+			if (this._freeGamesRemaining === 0 && !result.holdAndSpin?.active) {
 				this._spinsSinceLastOrb++;
 				this._orbProgress = Math.min(1, this._spinsSinceLastOrb / this._orbEstimatedSpinsToTrigger);
 				this.orbMeter.setProgress01(this._orbProgress);
@@ -256,6 +295,109 @@ export class PixiGame {
 
 		// Show win amount, but exclude FREE_GAMES from the display since we have visual feedback
 		const displayFeature = result.feature && !result.feature.includes("FREE") ? `${result.feature}  ` : "";
+		this.winText.text = `${displayFeature}Win ${result.totalWin}`;
+
+		return result;
+	}
+
+	async _renderHoldAndSpinRespin(result) {
+		// For hold and spin respins, we need to identify which positions are locked
+		// and only animate the non-locked positions
+		const lockedPositions = this.engine.holdSpin.getLockedPositions();
+		
+		// Create a modified animation plan that skips locked positions
+		const loops = [9, 10, 11, 12, 13];
+		const startDelays = [0, 70, 140, 210, 280];
+		const anticip = this.highlighter.anticipationDelays(result, this.engine.config);
+
+		const tasks = [];
+		for (let x = 0; x < this.cols; x += 1) {
+			// Check if this entire reel has locked positions
+			const hasLockedPositions = Array.from(lockedPositions).some(pos => pos.startsWith(`${x},`));
+			
+			if (hasLockedPositions) {
+				// This reel has locked orbs - handle it specially
+				tasks.push(this._spinReelWithLockedPositions(x, result.grid[x], loops[x], startDelays[x], anticip[x], lockedPositions));
+			} else {
+				// Normal reel spin
+				tasks.push(this.reels[x].spinTo(
+					result.grid[x],
+					loops[x],
+					startDelays[x],
+					anticip[x]
+				));
+			}
+		}
+		await Promise.all(tasks);
+	}
+
+	async _spinReelWithLockedPositions(reelIndex, finalColumn, loops, startDelay, extraStop, lockedPositions) {
+		// For reels with locked positions, we'll do a shorter spin animation
+		// and immediately set the locked positions to ORB symbols
+		
+		// First, get the current column state
+		const currentColumn = [...finalColumn];
+		
+		// Override locked positions with ORBs
+		for (let row = 0; row < this.rows; row++) {
+			const positionKey = `${reelIndex},${row}`;
+			if (lockedPositions.has(positionKey)) {
+				currentColumn[row] = "ORB";
+			}
+		}
+		
+		// Do a very short spin animation for visual effect, then set to final state
+		return new Promise((resolve) => {
+			setTimeout(async () => {
+				// Short spin with fewer loops for locked reels
+				await this.reels[reelIndex].spinTo(
+					currentColumn,
+					Math.max(1, Math.floor(loops / 3)), // Shorter spin
+					0, // No extra delay
+					extraStop / 2 // Less anticipation
+				);
+				resolve();
+			}, startDelay);
+		});
+	}
+
+	async spinAndRenderWithFeature(featureType) {
+		const result = await this.engine.buyFeature(featureType);
+
+		const loops = [9, 10, 11, 12, 13];
+		const startDelays = [0, 70, 140, 210, 280];
+		const anticip = this.highlighter.anticipationDelays(result, this.engine.config);
+
+		const tasks = [];
+		for (let x = 0; x < this.cols; x += 1) {
+			tasks.push(this.reels[x].spinTo(
+				result.grid[x],
+				loops[x],
+				startDelays[x],
+				anticip[x]
+			));
+		}
+		await Promise.all(tasks);
+
+		// Debug: log what features we're seeing
+		if (result.feature) {
+			console.log(`[PixiGame] Bought feature: "${result.feature}"`);
+		}
+
+		// Handle different features (same logic as regular spins)
+		if (result.feature === "HOLD_AND_SPIN_START") {
+			// Hold and spin starting - trigger meter animation and show status
+			this.orbMeter.triggerTransition();
+			this._spinsSinceLastOrb = 0;
+			this._orbProgress = 0;
+			this.orbMeter.setProgress01(0);
+			this.holdSpinText.text = `${result.hold.orbCount} Orbs | ${result.hold.respinsRemaining} Respins`;
+			this.holdSpinText.visible = true;
+			console.log(`[PixiGame] Hold and Spin started with ${result.hold.orbCount} orbs, ${result.hold.respinsRemaining} respins remaining`);
+		}
+
+		// Show win amount for bought features
+		const displayFeature = result.feature ? `${result.feature}  ` : "";
 		this.winText.text = `${displayFeature}Win ${result.totalWin}`;
 
 		return result;
