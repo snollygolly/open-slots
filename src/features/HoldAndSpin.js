@@ -123,8 +123,21 @@ export class HoldAndSpin extends BaseFeature {
 			grandBonus: isFull && this.cfg.fullGridWinsGrand ? 1 : 0
 		};
 
+		// Mark feature inactive but keep locked orbs until engine clears them after payout
+		this.active = false;
+		this.respinsRemaining = 0;
+
 		this.emit("complete", result);
 		return result;
+	}
+
+	reset() {
+		// Clear all state so future spins don't show stale labels
+		this.active = false;
+		this.respinsRemaining = 0;
+		this.lockedOrbs = [];
+		this.lockedPositions.clear();
+		super.reset();
 	}
 
 	checkTrigger(spinResult) {
