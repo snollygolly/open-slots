@@ -8,6 +8,7 @@ import { Events } from "../core/events.js";
 import { Layers, setupLayers } from "./Layers.js";
 import { EffectsManager } from "./effects/EffectsManager.js";
 import { preloadSymbolTextures } from "./SymbolTextures.js";
+import { OrbSymbol } from "./OrbSymbol.js";
 
 export class PixiGame {
 	constructor(app, engine, config) {
@@ -145,8 +146,10 @@ export class PixiGame {
 				0,
 				this.rows,
 				this.cellW,
-				this.cellH
+				this.cellH,
+				{ strip: (this.config?.reels?.[x] || null), rngFn: () => this.engine.rngService.random(), holdAndSpin: (this.config?.holdAndSpin || {}) }
 			);
+			reel.setColumnIndex(x);
 			reel.container.zIndex = 10;
 			this.reelViewport.addChild(reel.container);
 			this.reels.push(reel);
@@ -169,17 +172,9 @@ export class PixiGame {
 		const boot = engine.math.spinReels();
 		this._assetsReady.then(() => {
 			for (let i = 0; i < this.cols; i += 1) {
-				this.reels[i].setIdleColumn(boot[i]);
+				this.reels[i].setIdleColumn(boot[i], []);
 			}
-			// Also render initial ORB labels (if any) so orbs aren't label-less on load
-			try {
-				const evaln = this.engine.math.evaluateWays(boot);
-				this._renderOrbLabels({ evaln });
-				if (this.overlayViewport && this.orbLabels) {
-					this.orbLabels.zIndex = 10;
-					this.highlightLayer.zIndex = 5;
-				}
-			} catch (e) { /* ignore */ }
+			// Do not render overlay labels at boot; tiles handle base-game labels.
 		});
 
 		/* ORB meter centered above the reels */
@@ -300,12 +295,10 @@ export class PixiGame {
 		this.renderSpinResult(result, false); // false = don't show wins yet
 	}
 
-	// Create a text label for an ORB item
+	// Create a text label for an ORB item (using consolidated formatting)
 	_createOrbTextForItem(it) {
 		const pgMeta = this.config?.progressives?.meta || {};
-		let label = "";
-		if (it.type === "C") { label = `${it.amount}`; }
-		else if (it.type === "JP") { label = (pgMeta[it.id]?.label || it.id); }
+		const label = OrbSymbol.formatOrbItemText(it, pgMeta);
 		const t = new Text({ text: label, style: new TextStyle({ fill: "#fff", fontFamily: "system-ui", fontSize: 26, fontWeight: "800", stroke: { color: 0x031421, width: 4 } }) });
 		t.anchor.set(0.5);
 		return t;
@@ -441,10 +434,12 @@ export class PixiGame {
 	}
 
 	renderSpinResult(result, showWins = false) {
-		// Render the grid result
+		// Render the grid result with orb item data
+		const orbItems = result?.evaln?.orbItems || [];
 		for (let x = 0; x < this.cols; x += 1) {
-			this.reels[x].setIdleColumn(result.grid[x]);
+			this.reels[x].setIdleColumn(result.grid[x], orbItems);
 		}
+
 
 		// Only show wins if requested (after animation completes)
 		if (showWins) {
@@ -483,30 +478,12 @@ export class PixiGame {
         // Trigger the engine to handle the spin logic (bet deducted here)
         const result = await this.engine.spinOnce();
 
-        // Keep ORB labels visible and moving with reels during the spin animation
-        const lockedBeforeAnim = typeof this.engine.holdSpin?.getLockedOrbs === 'function' ? this.engine.holdSpin.getLockedOrbs() : [];
-        if (this.engine.holdSpin?.isActive?.() || (Array.isArray(lockedBeforeAnim) && lockedBeforeAnim.length > 0)) {
-            // During Hold & Spin, show persistent locked values
-            this._renderHoldLockedOrbLabels();
-            this._updateHoldWinText();
-            const orbCount = this.engine.holdSpin.getOrbCount?.() || 0;
-            const respinsRemaining = this.engine.holdSpin.getRemainingRespins?.() || 0;
-            this.holdSpinText.text = `${orbCount} Orbs | ${respinsRemaining} Respins`;
-            this.holdSpinText.visible = true;
-        } else {
-            // Base game: follow landing orbs throughout the spin
-            const startDelays = [0, 70, 140, 210, 280];
-            this._startOrbFollowDuringSpin(result, startDelays);
-            if (this.overlayViewport && this.orbLabels) {
-                this.orbLabels.zIndex = 10;
-                this.highlightLayer.zIndex = 5;
-            }
-        }
+        // Animation will start - don't show Hold & Spin labels until after orbs land
 
         // Animation only - no game logic, no wins shown yet
         await this.animateReels(result);
 
-        // Stop following; labels have reached their landing positions
+        // Stop following; overlay labels will be redrawn statically in showWins
         this._stopOrbFollowDuringSpin();
 
 		// After animation completes, now show the results and apply win credits
@@ -547,16 +524,28 @@ export class PixiGame {
 		const startDelays = [0, 70, 140, 210, 280];
 		const anticip = this.highlighter.anticipationDelays(result, this.engine.config);
 
+		// Provide per-column planned landing ORB rows to reel columns so they can suppress tile labels on those
+		for (let x = 0; x < this.cols; x += 1) {
+			const col = result.grid[x] || [];
+			const rows = [];
+			for (let y = 0; y < this.rows; y += 1) { if (col[y] === 'ORB') { rows.push(y); } }
+			if (typeof this.reels[x]?.setPlannedLandingOrbRows === 'function') {
+				this.reels[x].setPlannedLandingOrbRows(rows);
+			}
+		}
+
 		// Initialize potential-orb highlight logic for base game (not during Hold & Spin)
 		this._initOrbPotentialHighlight(result, startDelays, loops);
 
+		const orbItems = result?.evaln?.orbItems || [];
 		const tasks = [];
 		for (let x = 0; x < this.cols; x += 1) {
 			const p = this.reels[x].spinTo(
 				result.grid[x],
 				loops[x],
 				startDelays[x],
-				anticip[x]
+				anticip[x],
+				orbItems
 			);
 			// When each reel completes, update potential highlight state
 			p.then(() => { this._onReelStoppedForOrbPotential(x); });
@@ -632,23 +621,12 @@ export class PixiGame {
 		}
 	}
 
-    _renderOrbLabels(result) {
+    _renderOrbLabels() {
+        // With OrbSymbol, orb labels are now built into the symbols themselves
+        // This eliminates the need for separate overlay labels in base game
+        // Only used for Hold & Spin locked orbs now
         if (!this.orbLabels) { return; }
         this.orbLabels.removeChildren();
-        const items = result?.evaln?.orbItems || [];
-        const pgMeta = this.config?.progressives?.meta || {};
-			for (let i = 0; i < items.length; i += 1) {
-				const it = items[i];
-				const cx = (it.x * this.cellW) + (this.cellW / 2);
-				const cy = (it.y * this.cellH) + (this.cellH / 2);
-				let label = "";
-				if (it.type === "C") { label = `${it.amount}`; }
-				else if (it.type === "JP") { label = (pgMeta[it.id]?.label || it.id); }
-				const t = new Text({ text: label, style: new TextStyle({ fill: "#fff", fontFamily: "system-ui", fontSize: 26, fontWeight: "800", stroke: { color: 0x031421, width: 4 } }) });
-				t.anchor.set(0.5);
-				t.position.set(cx, cy);
-				this.orbLabels.addChild(t);
-        }
     }
 
     _renderHoldLockedOrbLabels() {
@@ -662,9 +640,7 @@ export class PixiGame {
             const it = locked[i];
             const cx = (it.reel * this.cellW) + (this.cellW / 2);
             const cy = (it.row * this.cellH) + (this.cellH / 2);
-            let label = '';
-            if (it.type === 'C') { label = `${it.amount}`; }
-            else if (it.type === 'JP') { label = (pgMeta[it.id]?.label || it.id); }
+            const label = OrbSymbol.formatOrbItemText(it, pgMeta);
             const t = new Text({ text: label, style: new TextStyle({ fill: '#fff', fontFamily: 'system-ui', fontSize: 26, fontWeight: '800', stroke: { color: 0x031421, width: 4 } }) });
             t.anchor.set(0.5);
             t.position.set(cx, cy);
@@ -700,6 +676,7 @@ export class PixiGame {
 		const startDelays = [0, 70, 140, 210, 280];
 		const anticip = this.highlighter.anticipationDelays(result, this.engine.config);
 
+		const orbItems = result?.evaln?.orbItems || [];
 		const tasks = [];
 		for (let x = 0; x < this.cols; x += 1) {
 			// All reels spin exactly the same way
@@ -707,7 +684,8 @@ export class PixiGame {
 				result.grid[x],
 				loops[x],
 				startDelays[x],
-				anticip[x]
+				anticip[x],
+				orbItems
 			));
 		}
 		await Promise.all(tasks);
@@ -720,32 +698,21 @@ export class PixiGame {
         
         const result = await this.engine.buyFeature(featureType);
 
-        // For bought features, Hold & Spin becomes active; show persistent locked labels
-        const lockedPre = typeof this.engine.holdSpin?.getLockedOrbs === 'function' ? this.engine.holdSpin.getLockedOrbs() : [];
-        if (this.engine.holdSpin?.isActive?.() || (Array.isArray(lockedPre) && lockedPre.length > 0)) {
-            this._renderHoldLockedOrbLabels();
-            this._updateHoldWinText();
-            const orbCount = this.engine.holdSpin.getOrbCount?.() || 0;
-            const respinsRemaining = this.engine.holdSpin.getRemainingRespins?.() || 0;
-            this.holdSpinText.text = `${orbCount} Orbs | ${respinsRemaining} Respins`;
-            this.holdSpinText.visible = true;
-            if (this.overlayViewport && this.orbLabels) {
-                this.orbLabels.zIndex = 10;
-                this.highlightLayer.zIndex = 5;
-            }
-        }
+        // Don't show Hold & Spin labels immediately - wait for animation to complete
 
 		const loops = [9, 10, 11, 12, 13];
 		const startDelays = [0, 70, 140, 210, 280];
 		const anticip = this.highlighter.anticipationDelays(result, this.engine.config);
 
+		const orbItems = result?.evaln?.orbItems || [];
 		const tasks = [];
 		for (let x = 0; x < this.cols; x += 1) {
 			tasks.push(this.reels[x].spinTo(
 				result.grid[x],
 				loops[x],
 				startDelays[x],
-				anticip[x]
+				anticip[x],
+				orbItems
 			));
 		}
 		await Promise.all(tasks);
@@ -761,34 +728,27 @@ export class PixiGame {
 
 		// Handle different features (same logic as regular spins)
     if (result.feature === "HOLD_AND_SPIN_START" || (result.feature && result.feature.includes("HOLD_AND_SPIN"))) {
-        // Hold and spin starting - trigger meter animation and show status
+        // Hold and spin starting - trigger meter animation
         this.orbMeter.triggerTransition();
         this._spinsSinceLastOrb = 0;
         this._orbProgress = 0;
         this.orbMeter.setProgress01(0);
         
-        // Set and show the hold spin status text using engine methods
-        const orbCount = this.engine.holdSpin?.getOrbCount?.() || 0;
-        const respinsRemaining = this.engine.holdSpin?.getRemainingRespins?.() || 0;
-        this.holdSpinText.text = `${orbCount} Orbs | ${respinsRemaining} Respins`;
-        this.holdSpinText.visible = true;
-        
-        console.log(`[PixiGame] Hold and Spin started with ${orbCount} orbs, ${respinsRemaining} respins remaining`);
-        console.log(`[PixiGame] holdSpinText visible: ${this.holdSpinText.visible}, text: "${this.holdSpinText.text}"`);
-        
-        // Render locked orb labels immediately (this will override the base game orb labels from renderSpinResult)
-        this._renderHoldLockedOrbLabels();
-        // Update win text with locked orb total
-        this._updateHoldWinText();
+        console.log(`[PixiGame] Hold and Spin feature started`);
     }
     
-    // Update Hold and Spin status during any spin when the feature is active
+    // Update Hold and Spin status after orbs have landed (when the feature is active)
     if (this.engine.holdSpin?.isActive?.()) {
         const orbCount = this.engine.holdSpin.getOrbCount() || 0;
         const respinsRemaining = this.engine.holdSpin.getRemainingRespins() || 0;
         this.holdSpinText.text = `${orbCount} Orbs | ${respinsRemaining} Respins`;
         this.holdSpinText.visible = true;
-        console.log(`[PixiGame] Updated Hold and Spin status: ${orbCount} orbs, ${respinsRemaining} respins`);
+        
+        // Update win text with locked orb total
+        this._updateHoldWinText();
+        // Note: Orb labels are handled by OrbSymbol - no overlay needed
+        
+        console.log(`[PixiGame] Hold and Spin status: ${orbCount} orbs, ${respinsRemaining} respins`);
     }
 
 		// Apply win credits after animation (this will handle win display via PAYING event)
@@ -871,15 +831,9 @@ export class PixiGame {
         } else if (typeof this.highlighter.show === "function") {
             this.highlighter.show(result, "paths");
         }
-        // Draw ORB value labels on top of any highlight shade
-        const locked = typeof this.engine.holdSpin?.getLockedOrbs === 'function' ? this.engine.holdSpin.getLockedOrbs() : [];
-        if (this.engine.holdSpin?.isActive?.() || (Array.isArray(locked) && locked.length > 0)) {
-            // During Hold & Spin, render persistent locked values
-            this._renderHoldLockedOrbLabels();
-        } else {
-            // Base game rendering uses this spin's orb items
-            this._renderOrbLabels(result);
-        }
+        // With OrbSymbol consolidation, all orb labels are built into the symbols themselves
+        // No overlay labels needed for any game mode - eliminates duplicate labels
+        // Hold & Spin orbs get their values from the OrbSymbol when created
         // Bring label layer to top just in case
         if (this.overlayViewport && this.orbLabels) {
             this.orbLabels.zIndex = 10;
