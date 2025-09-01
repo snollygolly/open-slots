@@ -98,9 +98,32 @@ export class OrbMeter {
     
     const idx = Math.round(this.progress01 * (this.frames.length - 1));
     if (idx !== this.currentFrameIndex) {
+      const oldFrame = this.currentFrameIndex;
       this.currentFrameIndex = idx;
       this.sprite.texture = this.frames[idx];
+      
+      // Progressive effects when advancing to a new frame
+      if (idx > oldFrame) {
+        this._triggerProgressEffects(idx);
+      }
     }
+  }
+
+  _triggerProgressEffects(frameIndex) {
+    // Get sprite center for particle effects
+    const cx = (this.sprite.width / 2) | 0;
+    const cy = (this.sprite.height / 2) | 0;
+    
+    // Sparkle effects - more intense as we progress
+    const sparkCount = Math.min(8 + (frameIndex * 2), 20);
+    this.spark.burst({ x: cx, y: cy, count: sparkCount });
+    
+    // Rumble effect - gentle shake that increases with progress
+    const rumbleIntensity = Math.min(2 + frameIndex, 6);
+    const rumbleDuration = 200 + (frameIndex * 50);
+    this.rumble.start(rumbleIntensity, rumbleDuration);
+    
+    console.log(`[OrbMeter] Frame ${frameIndex}: ${sparkCount} sparkles, rumble ${rumbleIntensity}/${rumbleDuration}ms`);
   }
 
   advanceBy(amount01) {
