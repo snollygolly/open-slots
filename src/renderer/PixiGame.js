@@ -1,5 +1,6 @@
 import { Container, Text, TextStyle, Graphics } from "pixi.js";
 import { ReelColumn } from "./ReelColumn.js";
+import { OrbSymbol } from "./OrbSymbol.js";
 import { WinHighlighter } from "./WinHighlighter.js";
 import { FrameUI } from "./ui/FrameUI.js";
 import { OrbMeter } from "./OrbMeter.js";
@@ -57,6 +58,10 @@ export class PixiGame {
 			this.reelPotentialLayer = new Container();
 			this.reelPotentialLayer.zIndex = 4;
 			this.overlayViewport.addChild(this.reelPotentialLayer);
+			// Layer for visually locked orbs during Hold & Spin (stays static over spinning reels)
+			this.holdLockedOverlayLayer = new Container();
+			this.holdLockedOverlayLayer.zIndex = 6;
+			this.overlayViewport.addChild(this.holdLockedOverlayLayer);
 			this.highlightLayer = new Container();
 			this.highlightLayer.zIndex = 5;
 			this.overlayViewport.addChild(this.highlightLayer);
@@ -261,6 +266,52 @@ export class PixiGame {
 		this.engine.on(Events.FREE_GAMES_END, (data) => this.onFreeGamesEnd(data));
 	}
 
+	// ----- Hold & Spin: Visual lock overlays -----
+	_clearHoldLockedOverlays() {
+		if (!this.holdLockedOverlayLayer) return;
+		this.holdLockedOverlayLayer.removeChildren();
+	}
+
+	_rebuildHoldLockedOverlays() {
+		// Only show overlays while Hold & Spin is active
+		if (!this.engine.holdSpin?.isActive?.()) {
+			this._clearHoldLockedOverlays();
+			return;
+		}
+		const locked = typeof this.engine.holdSpin?.getLockedOrbs === 'function'
+			? this.engine.holdSpin.getLockedOrbs()
+			: [];
+
+		this._clearHoldLockedOverlays();
+
+		// For each locked orb, draw a full-cell background to completely mask the spinning reel
+		// and place a copy of the orb symbol in the same inset as base tiles (8px margin)
+		for (let i = 0; i < locked.length; i += 1) {
+			const o = locked[i];
+			if (typeof o.reel !== 'number' || typeof o.row !== 'number') continue;
+			const wrap = new Container();
+			wrap.position.set(o.reel * this.cellW, o.row * this.cellH);
+			wrap.zIndex = 1;
+
+			// Solid background to fully cover the cell area and hide any reel motion behind it
+			const bg = new Graphics();
+			bg.rect(0, 0, this.cellW, this.cellH);
+			bg.fill({ color: 0x0b1d31, alpha: 1 }); // cell background color
+			wrap.addChild(bg);
+
+			// Build orb item payload for OrbSymbol
+			const orbItem = (o.type === 'JP')
+				? { type: 'JP', id: o.id }
+				: { type: 'C', amount: o.amount };
+			// Create a static orb symbol and position it with the standard 8px inset
+			const orb = OrbSymbol.fromOrbItem(this.cellW, this.cellH, orbItem);
+			orb.position.set(8, 8);
+			wrap.addChild(orb);
+
+			this.holdLockedOverlayLayer.addChild(wrap);
+		}
+	}
+
 	onSpinStart() {
 		this.highlighter.reset();
 		
@@ -276,6 +327,8 @@ export class PixiGame {
 			this.holdSpinText.text = `${orbCount} Orbs | ${respinsRemaining} Respins`;
 			this.holdSpinText.visible = true;
 			this._updateHoldWinText();
+			// Ensure locked overlays are present over the spinning reels
+			this._rebuildHoldLockedOverlays();
 		}
 	}
 
@@ -312,6 +365,8 @@ export class PixiGame {
 				
 				// Update win text with locked orb total
 				this._updateHoldWinText();
+				// Build initial visual locks for existing orbs
+				this._rebuildHoldLockedOverlays();
 			}
 		}
 	}
@@ -323,6 +378,7 @@ export class PixiGame {
 		if (data.feature === "HoldAndSpin" || (data.feature && data.feature.includes("HOLD_AND_SPIN"))) {
 			this.holdSpinText.visible = false;
 			console.log(`[PixiGame] Hold and Spin ended, hiding status text`);
+			this._clearHoldLockedOverlays();
 		}
 	}
 
@@ -395,6 +451,8 @@ export class PixiGame {
 				this.holdSpinText.text = `${orbCount} Orbs | ${respinsRemaining} Respins`;
 				this.holdSpinText.visible = true;
 				console.log(`[PixiGame] Updated Hold and Spin status during spin: ${orbCount} orbs, ${respinsRemaining} respins`);
+				// After landing, rebuild overlays to include any newly-locked orbs for upcoming respins
+				this._rebuildHoldLockedOverlays();
 			}
 			// Other win display will be handled by PAYING event
 		}
