@@ -6,29 +6,29 @@ import { Container, Graphics, Sprite } from "pixi.js";
  * Uses app.renderer.generateTexture(...) to create a texture from Graphics.
  */
 export class SparkleEmitter {
-	constructor(app, parent) {
+	constructor(app, parent, color = 0xffffff) {
 		this.app = app;
 		this.parent = parent;
 		this.container = new Container();
 		this.parent.addChild(this.container);
 		this.alive = [];
 
-		this.tex = SparkleEmitter.makeSparkleTexture(app);
+		this.tex = SparkleEmitter.makeSparkleTexture(app, color);
 	}
 
 	/**
 	 * In Pixi v8, you cannot Texture.from(Graphics).
 	 * Instead, render the Graphics to a texture via the renderer.
 	 */
-	static makeSparkleTexture(app) {
+	static makeSparkleTexture(app, color = 0xffffff) {
 		const g = new Graphics();
 
 		// simple bright dot with halo
 		g.circle(16, 16, 3);
-		g.fill({ color: 0xffffff, alpha: 1 });
+		g.fill({ color: color, alpha: 1 });
 
 		g.circle(16, 16, 6);
-		g.stroke({ width: 1, color: 0xffffff, alpha: 0.85 });
+		g.stroke({ width: 1, color: color, alpha: 0.85 });
 
 		// render Graphics into a texture
 		const tex = app.renderer.generateTexture(g);
