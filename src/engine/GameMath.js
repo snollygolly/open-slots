@@ -65,39 +65,52 @@ export class GameMath {
 		return { lineWin: win, waysDetail: detail, scatters: countScatter(), orbs: orbCount() };
 	}
 	playHoldAndSpin(startingOrbs, bet, contributeJackpot) {
-		const { holdAndSpin, progressives } = this.config;
-		const placed = [...startingOrbs];
-		let respins = holdAndSpin.respins;
-		while (respins > 0 && placed.length < (this.config.grid.reels * this.config.grid.rows)) {
-			let hit = false;
-			const attempts = Math.floor(1 + this.rng() * 3);
-			for (let a = 0; a < attempts; a += 1) {
-				const rollJp = this.rng() < holdAndSpin.jackpotChancesPerOrb;
-				if (rollJp) {
-					const ids = Object.keys(holdAndSpin.jackpotWeights);
-					const weights = ids.map((id) => holdAndSpin.jackpotWeights[id]);
-					const jp = pickWeighted(this.rng, ids, weights);
-					placed.push({ type: "JP", id: jp, amount: contributeJackpot(jp) });
-					hit = true;
-				} else {
-					const v = pickWeighted(this.rng, holdAndSpin.creditValues, holdAndSpin.creditWeights);
-					placed.push({ type: "C", amount: v });
-					hit = true;
-				}
-				if (placed.length >= (this.config.grid.reels * this.config.grid.rows)) { break; }
-			}
-			respins = hit ? holdAndSpin.respins : (respins - 1);
+		const { holdAndSpin, grid } = this.config;
+		const totalPositions = grid.reels * grid.rows;
+		
+		// Initialize grid with starting orbs that have reasonable credit values
+		const lockedOrbs = [];
+		for (let i = 0; i < startingOrbs.length; i++) {
+			const creditValue = pickWeighted(this.rng, holdAndSpin.creditValues, holdAndSpin.creditWeights);
+			lockedOrbs.push({ type: "C", amount: creditValue });
 		}
+		
+		let respins = holdAndSpin.respins;
+		while (respins > 0 && lockedOrbs.length < totalPositions) {
+			// Spin the reels to see if new orbs land
+			const newGrid = this.spinReels();
+			const newEvaluation = this.evaluateWays(newGrid);
+			const newOrbs = newEvaluation.orbs;
+			
+			if (newOrbs > 0) {
+				// New orbs found - add them to locked orbs and reset respins
+				for (let i = 0; i < newOrbs; i++) {
+					if (lockedOrbs.length >= totalPositions) break;
+					const creditValue = pickWeighted(this.rng, holdAndSpin.creditValues, holdAndSpin.creditWeights);
+					lockedOrbs.push({ type: "C", amount: creditValue });
+				}
+				respins = holdAndSpin.respins; // Reset to 3
+			} else {
+				// No new orbs - decrement respins
+				respins--;
+			}
+		}
+		
+		// Calculate total win (just sum of credit values - no jackpot multiplication)
 		let sum = 0;
 		const jackpots = {};
-		for (let i = 0; i < placed.length; i += 1) {
-			const p = placed[i];
-			if (p.type === "C") { sum += p.amount; }
-			if (p.type === "JP") { sum += Math.round(p.amount / this.config.denom); jackpots[p.id] = (jackpots[p.id] || 0) + 1; }
+		for (let i = 0; i < lockedOrbs.length; i++) {
+			const orb = lockedOrbs[i];
+			sum += orb.amount;
 		}
-		const full = placed.length >= (this.config.grid.reels * this.config.grid.rows);
-		const grandHit = full && this.config.holdAndSpin.fullGridWinsGrand;
-		if (grandHit) { sum += Math.round(progressives.meta.GRAND.seed / this.config.denom); }
-		return { sumCredits: sum, items: placed, full, grandHit, jackpots };
+		
+		const full = lockedOrbs.length >= totalPositions;
+		const grandHit = full && holdAndSpin.fullGridWinsGrand;
+		if (grandHit) {
+			// Add a reasonable grand jackpot bonus (not divided by denom)
+			sum += 5000; // Fixed grand bonus
+		}
+		
+		return { sumCredits: sum, items: lockedOrbs, full, grandHit, jackpots };
 	}
 }
