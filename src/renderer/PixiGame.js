@@ -2,6 +2,7 @@ import { Container, Text, TextStyle } from "pixi.js";
 import { ReelColumn } from "./ReelColumn.js";
 import { WinHighlighter } from "./WinHighlighter.js";
 import { FrameUI } from "./ui/FrameUI.js";
+import { OrbMeter } from "./OrbMeter.js";
 
 export class PixiGame {
 	constructor(app, engine, config) {
@@ -9,27 +10,18 @@ export class PixiGame {
 		this.engine = engine;
 		this.config = config;
 
-		// Root stage and layers
 		this.stage = new Container();
-		this.stage.sortableChildren = true; // allow zIndex ordering
+		this.stage.sortableChildren = true;
 		this.app.stage.addChild(this.stage);
 
-		// Grid geometry
 		this.cellW = 200;
 		this.cellH = 140;
 		this.cols = config.grid.reels;
 		this.rows = config.grid.rows;
 		this.offsetX = 80;
-		this.offsetY = 100;
+		// Move reels down a bit to make room for the progressive meter above
+		this.offsetY = 140;
 
-		// Layers
-		this.reelLayer = new Container();
-		this.reelLayer.zIndex = 10;
-
-		this.overlayLayer = new Container();
-		this.overlayLayer.zIndex = 30;
-
-		// Frame & mask (background should be BEHIND reels)
 		this.frame = new FrameUI(
 			this.offsetX,
 			this.offsetY,
@@ -39,17 +31,22 @@ export class PixiGame {
 			this.rows
 		);
 		this.frame.container.zIndex = 0;
-
-		// Add in the right visual order
 		this.stage.addChild(this.frame.container);
-		this.stage.addChild(this.reelLayer);
-		this.stage.addChild(this.overlayLayer);
 
-		// Apply the same mask to reels and overlays
-		this.frame.applyMask(this.reelLayer);
-		this.frame.applyMask(this.overlayLayer);
+		this.reelViewport = new Container();
+		this.reelViewport.position.set(this.offsetX, this.offsetY);
+		this.reelViewport.zIndex = 10;
+		this.stage.addChild(this.reelViewport);
 
-		// Minimal HUD text
+		this.overlayViewport = new Container();
+		this.overlayViewport.position.set(this.offsetX, this.offsetY);
+		this.overlayViewport.zIndex = 30;
+		this.stage.addChild(this.overlayViewport);
+
+		// Clip reels and overlays to the frame area
+		this.frame.applyMask(this.reelViewport);
+		this.frame.applyMask(this.overlayViewport);
+
 		this.winText = new Text({
 			text: "",
 			style: new TextStyle({
@@ -63,28 +60,26 @@ export class PixiGame {
 		this.winText.zIndex = 40;
 		this.stage.addChild(this.winText);
 
-		// Build reels
 		this.reels = [];
 		for (let x = 0; x < this.cols; x += 1) {
 			const reel = new ReelColumn(
 				this.app,
-				this.offsetX + (x * this.cellW),
-				this.offsetY,
+				x * this.cellW,
+				0,
 				this.rows,
 				this.cellW,
 				this.cellH
 			);
 			reel.container.zIndex = 10;
-			this.reelLayer.addChild(reel.container);
+			this.reelViewport.addChild(reel.container);
 			this.reels.push(reel);
 		}
 
-		// Win highlighter
 		this.highlighter = new WinHighlighter(
 			this.app,
-			this.overlayLayer,
-			this.offsetX,
-			this.offsetY,
+			this.overlayViewport,
+			0,
+			0,
 			this.cellW,
 			this.cellH,
 			this.cols,
@@ -92,14 +87,52 @@ export class PixiGame {
 			config.symbols
 		);
 
-		// Boot: show a random matrix immediately
 		const boot = engine.math.spinReels();
-		for (let x = 0; x < this.cols; x += 1) {
-			this.reels[x].setIdleColumn(boot[x]);
+		for (let i = 0; i < this.cols; i += 1) {
+			this.reels[i].setIdleColumn(boot[i]);
 		}
 
-		// Clear highlights as soon as a spin begins
-		this.engine.on("spinStart", () => { this.prepareForSpin(); });
+		/* ORB meter centered above the reels */
+		this.orbMeter = new OrbMeter(this.app, this.stage, 0, 0);
+		// Center horizontally above the frame; anchor the sprite to its center-bottom
+		const centerX = this.offsetX + (this.cellW * this.cols) / 2;
+		// Position and scale the meter after it loads
+		this.orbMeter.ready?.then(() => {
+			if (this.orbMeter.sprite?.anchor) { 
+				this.orbMeter.sprite.anchor.set(0.5, 0); // top-center anchor
+			}
+			
+			// Fit the meter into the space above the frame
+			const naturalH = this.orbMeter.sprite?.height || 0;
+			const maxH = Math.max(64, this.offsetY - 24); // keep buffer space
+			if (naturalH > 0) {
+				const scale = Math.min(1, maxH / naturalH);
+				this.orbMeter.sprite.scale.set(scale, scale);
+			}
+			
+			// Position centered above the reels
+			const finalHeight = this.orbMeter.sprite?.height || this.orbMeter.container.height || 0;
+			const finalY = Math.max(8, this.offsetY - finalHeight - 8);
+			this.orbMeter.container.position.set(centerX, finalY);
+		});
+		this.stage.addChild(this.orbMeter.container);
+
+		// Track time since last ORB feature trigger to drive the meter
+		this._orbProgressMaxMs = 180000; // 3 minutes to fill
+		// Start partially filled so art is visible immediately
+		this._lastOrbTs = performance.now() - (this._orbProgressMaxMs * 0.15);
+
+		this.engine.on("spinStart", () => {
+			this.prepareForSpin();
+		});
+
+		// Continuous update for orb progress based on elapsed time
+		this.app.ticker.add(() => {
+			if (!this._lastOrbTs) { return; }
+			const elapsed = performance.now() - this._lastOrbTs;
+			const p = Math.max(0, Math.min(1, elapsed / this._orbProgressMaxMs));
+			this.orbMeter.setProgress01(p);
+		});
 	}
 
 	prepareForSpin() {
@@ -126,6 +159,12 @@ export class PixiGame {
 		}
 		await Promise.all(tasks);
 
+		if (result.feature === "HOLD_AND_SPIN") {
+			this.orbMeter.triggerTransition();
+			this._lastOrbTs = performance.now();
+			this.orbMeter.setProgress01(0);
+		}
+
 		this.winText.text = result.feature
 			? `${result.feature}  Win ${result.totalWin}`
 			: `Win ${result.totalWin}`;
@@ -134,6 +173,11 @@ export class PixiGame {
 	}
 
 	showWins(result) {
-		this.highlighter.showPaths(result);
+		// Always show path highlights (compat if older bundles expected .show)
+		if (typeof this.highlighter.showPaths === "function") {
+			this.highlighter.showPaths(result);
+		} else if (typeof this.highlighter.show === "function") {
+			this.highlighter.show(result, "paths");
+		}
 	}
 }

@@ -9,6 +9,7 @@
 		"sim": "node ./src/sim/run-sim.js"
 	},
 	"dependencies": {
+		"@pixi/assets": "^7.4.3",
 		"pixi.js": "^8.12.0"
 	},
 	"devDependencies": {
