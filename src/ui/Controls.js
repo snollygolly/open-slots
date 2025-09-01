@@ -41,8 +41,7 @@ export class Controls {
 		this.$sim.onclick = async() => {
 			const n = 1000; let wagered = 0; let paid = 0; let hits = 0;
 			for (let i = 0; i < n; i += 1) {
-				const r = await this.game.engine.spinOnce();
-				this.engine.applyWinCredits(r);
+				const r = this.game.engine.simulateSpinOnly();
 				wagered += this.engine.bet; paid += r.totalWin; if (r.totalWin > 0) { hits += 1; }
 			}
 			this.$last.textContent = `Sim RTP ${((paid / wagered) * 100).toFixed(2)}% Hit ${(hits / n * 100).toFixed(1)}%`;

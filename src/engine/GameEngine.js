@@ -68,6 +68,28 @@ export class GameEngine extends EventBus {
 		}
 	}
 	
+	simulateSpinOnly() {
+		const grid = this.math.spinReels();
+		const evaln = this.math.evaluateWays(grid);
+		let totalWin = 0;
+		let feature = null;
+		let hold = null;
+		const fgCfg = this.config.freeGames;
+		const hsCfg = this.config.holdAndSpin;
+		if (evaln.orbs >= hsCfg.triggerCount) {
+			const startOrbs = []; for (let i = 0; i < evaln.orbs; i += 1) { startOrbs.push({ type: "C", amount: 50 }); }
+			hold = this.math.playHoldAndSpin(startOrbs, this.bet, () => 1000);
+			totalWin += hold.sumCredits;
+			feature = "HOLD_AND_SPIN";
+		} else if (evaln.scatters >= fgCfg.triggerScatters) {
+			feature = "FREE_GAMES_TRIGGER";
+		} else {
+			totalWin += evaln.lineWin;
+		}
+		const wager = this.bet;
+		return { grid, evaln, totalWin, feature, hold, wager };
+	}
+
 	applyWinCredits(result) {
 		this.credits = this.wallet.addCredits(result.totalWin);
 		this.emit("balance", null);
