@@ -264,11 +264,11 @@ export class PixiGame {
 	_handleFreeGamesStart(result) {
 		// Parse free games count from feature text (e.g., "FREE_GAMES_10" or just "FREE_GAMES")
 		const match = result.feature.match(/FREE.*?(\d+)/);
-		let freeGamesAwarded = match ? parseInt(match[1]) : 10; // Default to 10
+		let freeGamesAwarded = match ? parseInt(match[1]) : this.engine.config.freeGames.spins;
 		
-		// If we're already in free games and this is "FREE_GAMES" (retrigger), use default award
+		// If we're already in free games and this is "FREE_GAMES" (retrigger), use retrigger amount
 		if (this._freeGamesRemaining > 0 && result.feature === "FREE_GAMES") {
-			freeGamesAwarded = 10; // Standard retrigger amount
+			freeGamesAwarded = this.engine.config.freeGames.retrigger;
 		}
 		
 		if (this._freeGamesRemaining > 0) {

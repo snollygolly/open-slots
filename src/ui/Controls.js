@@ -40,11 +40,30 @@ export class Controls {
 		};
 		this.$sim.onclick = async() => {
 			const n = 1000; let wagered = 0; let paid = 0; let hits = 0;
+			let freeGamesTriggers = 0; let totalFreeGamesPlayed = 0; let orbFeatures = 0;
+			let jackpotHits = { MINI: 0, MINOR: 0, MAJOR: 0, GRAND: 0 };
+			
 			for (let i = 0; i < n; i += 1) {
 				const r = this.game.engine.simulateSpinOnly();
 				wagered += this.engine.bet; paid += r.totalWin; if (r.totalWin > 0) { hits += 1; }
+				
+				if (r.feature === "FREE_GAMES_TRIGGER") {
+					freeGamesTriggers += 1;
+					totalFreeGamesPlayed += this.engine.config.freeGames.spins;
+				}
+				
+				if (r.feature === "HOLD_AND_SPIN") {
+					orbFeatures += 1;
+					if (r.hold?.jackpots) {
+						Object.keys(r.hold.jackpots).forEach(jp => {
+							jackpotHits[jp] = (jackpotHits[jp] || 0) + r.hold.jackpots[jp];
+						});
+					}
+				}
 			}
-			this.$last.textContent = `Sim RTP ${((paid / wagered) * 100).toFixed(2)}% Hit ${(hits / n * 100).toFixed(1)}%`;
+			
+			const jpText = Object.keys(jackpotHits).filter(jp => jackpotHits[jp] > 0).map(jp => `${jp}:${jackpotHits[jp]}`).join(' ') || 'None';
+			this.$last.textContent = `Sim RTP ${((paid / wagered) * 100).toFixed(2)}% Hit ${(hits / n * 100).toFixed(1)}% | FG: ${freeGamesTriggers}x (${totalFreeGamesPlayed} spins) | Orb: ${orbFeatures} | JP: ${jpText}`;
 		};
 		this.updateMeters();
 	}
