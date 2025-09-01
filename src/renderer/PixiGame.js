@@ -114,24 +114,19 @@ export class PixiGame {
 			const finalHeight = this.orbMeter.sprite?.height || this.orbMeter.container.height || 0;
 			const finalY = Math.max(8, this.offsetY - finalHeight - 8);
 			this.orbMeter.container.position.set(centerX, finalY);
+			
+			// Set initial progress based on starting spin count
+			this.orbMeter.setProgress01(this._orbProgress);
 		});
 		this.stage.addChild(this.orbMeter.container);
 
-		// Track time since last ORB feature trigger to drive the meter
-		this._orbProgressMaxMs = 180000; // 3 minutes to fill
-		// Start partially filled so art is visible immediately
-		this._lastOrbTs = performance.now() - (this._orbProgressMaxMs * 0.15);
+		// Track spins since last ORB feature to drive the meter
+		this._orbEstimatedSpinsToTrigger = 50; // Estimate: ORB should trigger around every 50 spins
+		this._spinsSinceLastOrb = 8; // Start with some spins so art is visible immediately
+		this._orbProgress = this._spinsSinceLastOrb / this._orbEstimatedSpinsToTrigger;
 
 		this.engine.on("spinStart", () => {
 			this.prepareForSpin();
-		});
-
-		// Continuous update for orb progress based on elapsed time
-		this.app.ticker.add(() => {
-			if (!this._lastOrbTs) { return; }
-			const elapsed = performance.now() - this._lastOrbTs;
-			const p = Math.max(0, Math.min(1, elapsed / this._orbProgressMaxMs));
-			this.orbMeter.setProgress01(p);
 		});
 	}
 
@@ -159,10 +154,18 @@ export class PixiGame {
 		}
 		await Promise.all(tasks);
 
+		// Update orb meter based on spin result
 		if (result.feature === "HOLD_AND_SPIN") {
+			// ORB feature triggered - reset the meter
 			this.orbMeter.triggerTransition();
-			this._lastOrbTs = performance.now();
+			this._spinsSinceLastOrb = 0;
+			this._orbProgress = 0;
 			this.orbMeter.setProgress01(0);
+		} else {
+			// No ORB feature - advance the meter
+			this._spinsSinceLastOrb++;
+			this._orbProgress = Math.min(1, this._spinsSinceLastOrb / this._orbEstimatedSpinsToTrigger);
+			this.orbMeter.setProgress01(this._orbProgress);
 		}
 
 		this.winText.text = result.feature
