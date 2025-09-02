@@ -11,7 +11,7 @@ import { EffectsManager } from "./effects/EffectsManager.js";
 import { preloadSymbolTextures } from "./SymbolTextures.js";
 
 export class PixiGame {
-	constructor(app, engine, config) {
+  constructor(app, engine, config) {
 		this.app = app;
 		this.engine = engine;
 		this.config = config;
@@ -216,6 +216,10 @@ export class PixiGame {
 		this._totalFreeGames = 0;
 		this._currentFreeGame = 0;
 
+		// Free Games cumulative win tracking for persistent Win label during feature
+		this._freeGamesActive = false;
+		this._freeGamesCumulativeWin = 0;
+
 		// Blue particle emitter for free games
 		const reelsCenterX = this.offsetX + (this.cellW * this.cols) / 2;
 		const reelsCenterY = this.offsetY + (this.cellH * this.rows) / 2;
@@ -317,8 +321,8 @@ export class PixiGame {
 		
 		// Orb values are now built into symbols - no separate labels to clear
 		
-		// Clear win text unless we're in an active Hold & Spin feature
-		if (!this.engine.holdSpin?.isActive?.()) {
+		// Clear win text unless we're in an active Hold & Spin OR Free Games feature
+		if (!this.engine.holdSpin?.isActive?.() && !this._freeGamesActive) {
 			this.winText.text = "";
 		} else {
 			// Update Hold & Spin status immediately at spin start (after respin was spent)
@@ -385,12 +389,18 @@ export class PixiGame {
 	onPaying(result) {
 		// During Hold and Spin, don't override the accumulated orb total display
 		if (this.engine.holdSpin?.isActive?.()) {
-			// Update the Hold and Spin win display instead
 			this._updateHoldWinText();
-		} else {
-			// Normal win display for base game and other features
-			this.winText.text = `Win ${result.totalWin}`;
+			return;
 		}
+		// During Free Games, keep a persistent cumulative total visible
+		if (this._freeGamesActive) {
+			const add = typeof result?.totalWin === 'number' ? result.totalWin : 0;
+			this._freeGamesCumulativeWin += Math.max(0, add);
+			this.winText.text = `Win ${this._freeGamesCumulativeWin}`;
+			return;
+		}
+		// Normal win display for base game and other features
+		this.winText.text = `Win ${result.totalWin}`;
 	}
 
 	onBalanceUpdate(data) {
@@ -402,22 +412,30 @@ export class PixiGame {
 		// Spin completed
 	}
 
-	onFreeGamesStart(data) {
+onFreeGamesStart(data) {
 		this._freeGamesRemaining = data.totalSpins || data.spinsAdded;
 		this._totalFreeGames = data.totalSpins || data.spinsAdded;
 		this._currentFreeGame = 0;
 
-		// Trigger particle effect
-		this.freeGamesEmitter.container.visible = true;
+    // Activate persistent win label and reset cumulative total unless this is a retrigger
+    this._freeGamesActive = true;
+    if (!data?.isRetrigger) {
+        this._freeGamesCumulativeWin = 0;
+    }
+
+    // Trigger particle effect
+    this.freeGamesEmitter.container.visible = true;
 		this.freeGamesEmitter.burst({ x: 0, y: 0, count: 50 });
 		setTimeout(() => {
 			this.freeGamesEmitter.container.visible = false;
 		}, 2000);
 
-		// Immediately show free games status text
-		this.freeGamesText.text = `0/${this._totalFreeGames} Free Games`;
-		this.freeGamesText.visible = true;
-	}
+    // Immediately show free games status text
+    this.freeGamesText.text = `0/${this._totalFreeGames} Free Games`;
+    this.freeGamesText.visible = true;
+    // Show persistent cumulative win label during free games
+    this.winText.text = `Win ${this._freeGamesCumulativeWin}`;
+}
 
 	onFreeGamesChange(data) {
 		this._freeGamesRemaining = data.remaining;
@@ -426,12 +444,14 @@ export class PixiGame {
 		this.freeGamesText.visible = this._freeGamesRemaining > 0;
 	}
 
-	onFreeGamesEnd() {
-		this.freeGamesText.visible = false;
-		this._freeGamesRemaining = 0;
-		this._totalFreeGames = 0;
-		this._currentFreeGame = 0;
-	}
+onFreeGamesEnd() {
+    this.freeGamesText.visible = false;
+    this._freeGamesRemaining = 0;
+    this._totalFreeGames = 0;
+    this._currentFreeGame = 0;
+    // Feature ended — revert to normal win label behavior on next spin
+    this._freeGamesActive = false;
+}
 
 	renderSpinResult(result, showWins = false) {
 		// Render the grid result with orb item data
@@ -508,8 +528,8 @@ export class PixiGame {
 		
 		// Orb values are now built into symbols - no separate labels to clear
 		
-		// Clear win text unless we're in an active Hold & Spin feature
-		if (!this.engine.holdSpin?.isActive?.()) {
+		// Clear win text unless we're in an active Hold & Spin OR Free Games feature
+		if (!this.engine.holdSpin?.isActive?.() && !this._freeGamesActive) {
 			this.winText.text = "";
 			// Also hide hold spin text when not in the feature
 			this.holdSpinText.visible = false;
