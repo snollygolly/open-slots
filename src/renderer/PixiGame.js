@@ -391,10 +391,9 @@ export class PixiGame {
 	onFeatureEnd(data) {
 		console.log(`Feature ended: ${data.feature}`);
 		
-		// Hide Hold and Spin text when the feature ends
+		// Keep Hold and Spin text visible when the feature ends; hide on next spin
 		if (data.feature === "HoldAndSpin" || (data.feature && data.feature.includes("HOLD_AND_SPIN"))) {
-			this.holdSpinText.visible = false;
-			console.log(`[PixiGame] Hold and Spin ended, hiding status text`);
+			console.log(`[PixiGame] Hold and Spin ended, keeping status text until next spin`);
 			this._clearHoldLockedOverlays();
 			// Reset meter back to first frame after feature ends
 			if (typeof this.orbMeter.resetProgress === 'function') {
@@ -482,7 +481,10 @@ export class PixiGame {
 
 		// Only show wins if requested (after animation completes)
 		if (showWins) {
-			this.showWins(result);
+			// Suppress base-game path highlights during Hold & Spin
+			if (!this.engine.holdSpin?.isActive?.()) {
+				this.showWins(result);
+			}
 			// During Hold and Spin, always update the accumulated total and status
 			if (this.engine.holdSpin?.isActive?.()) {
 				this._updateHoldWinText();
@@ -501,7 +503,7 @@ export class PixiGame {
 		}
 	}
 
-	async spinAndRender() {
+    async spinAndRender() {
         // If Hold & Spin is active, spend a respin immediately on click
         if (this.engine.holdSpin?.isActive?.() && typeof this.engine.holdSpin.spendRespin === 'function') {
             this.engine.holdSpin.spendRespin();
@@ -522,7 +524,8 @@ export class PixiGame {
         // Animation will start - don't show Hold & Spin labels until after orbs land
 
         // Animation only - no game logic, no wins shown yet
-        await this.animateReels(result);
+        const suppressOrbPotential = !!(this.engine.holdSpin?.isActive?.());
+        await this.animateReels(result, { suppressOrbPotential });
 
         // If Free Games just triggered, activate its UI now that reels have stopped
         this._maybeActivateFreeGamesUI();
@@ -544,6 +547,8 @@ export class PixiGame {
 	}
 
 	prepareForSpin() {
+		// Always clear potential highlights prior to any spin to avoid stale aura
+		this._clearOrbPotentialHighlight();
 		// If the last spin concluded Free Games, clear its UI immediately on click
 		if (this._freeGamesEndedAwaitingSpin) {
 			this.freeGamesText.visible = false;
@@ -555,15 +560,12 @@ export class PixiGame {
 		this.highlighter.reset();
 		// Sync overlays with feature state before any reels move
 		const isHSActive = !!(this.engine.holdSpin?.isActive?.());
-		const hsRespins = typeof this.engine.holdSpin?.getRemainingRespins === 'function'
-			? (this.engine.holdSpin.getRemainingRespins() || 0)
-			: 0;
-		if (!isHSActive || hsRespins <= 0) {
-			// Feature not active or has no respins left — ensure overlays and status are cleared
+		if (!isHSActive) {
+			// Feature not active — ensure overlays and status are cleared
 			this._clearHoldLockedOverlays();
-			this.holdSpinText.visible = false;
+			this.holdSpinText.visible = false; // hide on next spin after feature ended
 			// Defensive: if engine state lingers, reset it here
-			if (this.engine.holdSpin && !isHSActive && typeof this.engine.holdSpin.reset === 'function') {
+			if (this.engine.holdSpin && typeof this.engine.holdSpin.reset === 'function') {
 				this.engine.holdSpin.reset();
 			}
 		} else {
@@ -575,12 +577,11 @@ export class PixiGame {
 		// Clear win text unless we're in an active Hold & Spin OR Free Games feature
 		if (!this.engine.holdSpin?.isActive?.() && !this._freeGamesActive) {
 			this.winText.text = "";
-			// Also hide hold spin text when not in the feature
-			this.holdSpinText.visible = false;
+			// Hold & Spin label visibility is handled above based on feature active state
 		}
 	}
 
-	async animateReels(result) {
+    async animateReels(result, opts = {}) {
 		// Standard reel animation parameters
 		const loops = [9, 10, 11, 12, 13];
 		const startDelays = [0, 70, 140, 210, 280];
@@ -588,8 +589,12 @@ export class PixiGame {
 
 		// With OrbSymbol, each orb handles its own value - no coordination needed
 
-		// Initialize potential-orb highlight logic for base game (not during Hold & Spin)
-		this._initOrbPotentialHighlight(result, startDelays, loops);
+        // Initialize potential-orb highlight logic for base game (not during Hold & Spin)
+        if (!opts.suppressOrbPotential) {
+            this._initOrbPotentialHighlight(result, startDelays, loops);
+        } else {
+            this._clearOrbPotentialHighlight();
+        }
 
 		const orbItems = result?.evaln?.orbItems || [];
 		const tasks = [];
@@ -733,18 +738,8 @@ export class PixiGame {
 		const startDelays = [0, 70, 140, 210, 280];
 		const anticip = this.highlighter.anticipationDelays(result, this.engine.config);
 
-		const orbItems = result?.evaln?.orbItems || [];
-		const tasks = [];
-		for (let x = 0; x < this.cols; x += 1) {
-			tasks.push(this.reels[x].spinTo(
-				result.grid[x],
-				loops[x],
-				startDelays[x],
-				anticip[x],
-				orbItems
-			));
-		}
-		await Promise.all(tasks);
+        // Use standard animator with orb potential suppressed (feature purchase implies feature context)
+        await this.animateReels(result, { suppressOrbPotential: true });
 
 		// After animation completes, render the spin results and show wins
 		// If Free Games was just triggered, activate its UI now
