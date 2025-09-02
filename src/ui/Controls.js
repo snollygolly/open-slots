@@ -7,6 +7,7 @@ export class Controls {
 		this.$bet = document.getElementById("bet");
 		this.$spin = document.getElementById("spin");
 		this.$buyFeature = document.getElementById("buyFeature");
+		this.$buyFreeGames = document.getElementById("buyFreeGames");
 		this.$sim = document.getElementById("sim1000");
 		this.$last = document.getElementById("lastWin");
 		this.$meters = document.getElementById("meters");
@@ -44,6 +45,25 @@ export class Controls {
 			this.clearWinLog();
 			const result = await this.game.spinAndRenderWithFeature("HOLD_AND_SPIN");
 			// spinAndRenderWithFeature already handles win display after animation
+			this.appendWinLog(result);
+			this.update();
+		};
+
+		this.$buyFreeGames.onclick = async() => {
+			if (!this.engine.fsm.canSpin()) { return; }
+			const featureCost = 10000;
+			if (this.engine.credits < featureCost) {
+				this.$status.textContent = "Insufficient credits to buy feature!";
+				setTimeout(() => { this.$status.textContent = "Ready"; }, 2000);
+				return;
+			}
+			// Deduct the feature cost
+			this.engine.credits = this.engine.wallet.deductCredits(featureCost);
+			this.engine.emit(Events.BALANCE, this.engine.getBalanceData());
+			this.update();
+
+			this.clearWinLog();
+			const result = await this.game.spinAndRenderWithFeature("FREE_GAMES");
 			this.appendWinLog(result);
 			this.update();
 		};

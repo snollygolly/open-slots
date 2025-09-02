@@ -413,6 +413,10 @@ export class PixiGame {
 		setTimeout(() => {
 			this.freeGamesEmitter.container.visible = false;
 		}, 2000);
+
+		// Immediately show free games status text
+		this.freeGamesText.text = `0/${this._totalFreeGames} Free Games`;
+		this.freeGamesText.visible = true;
 	}
 
 	onFreeGamesChange(data) {

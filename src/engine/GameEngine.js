@@ -78,6 +78,24 @@ export class GameEngine extends EventBus {
 
 		this.free = this.featuresRegistry.create("FreeGames", this.config, featureDependencies);
 		this.holdSpin = this.featuresRegistry.create("HoldAndSpin", this.config, featureDependencies);
+
+		// Forward feature events to the engine's EventBus so the renderer can listen on the engine
+		const forward = (src, eventName) => {
+			if (src && typeof src.on === 'function') {
+				src.on(eventName, (payload) => this.emit(eventName, payload));
+			}
+		};
+		// Free Games events
+		forward(this.free, Events.FREE_GAMES_START);
+		forward(this.free, Events.FREE_GAMES_CHANGE);
+		forward(this.free, Events.FREE_GAMES_END);
+		// Hold & Spin events (forward if emitted by feature)
+		forward(this.holdSpin, Events.HOLD_SPIN_START);
+		forward(this.holdSpin, Events.HOLD_SPIN_RESPIN);
+		forward(this.holdSpin, Events.HOLD_SPIN_END);
+		forward(this.holdSpin, Events.HOLD_SPIN_ORBS_ADDED);
+		forward(this.holdSpin, Events.HOLD_SPIN_NO_ORBS);
+		forward(this.holdSpin, Events.HOLD_SPIN_COMPLETE);
 	}
 
 	getBalanceData() {
@@ -169,6 +187,17 @@ export class GameEngine extends EventBus {
 				const triggerResult = this.holdSpin.trigger(triggerData);
 				this.fsm.triggerFeature({
 					type: "HOLD_AND_SPIN",
+					data: triggerResult
+				});
+				featureTriggered = true;
+			} else if (spinResult.boughtFeature === "FREE_GAMES") {
+				// Trigger Free Games as if naturally triggered by scatters
+				const triggerData = {
+					data: { scatterCount: spinResult.evaln?.scatters || 0, triggerScatters: this.config.freeGames.triggerScatters }
+				};
+				const triggerResult = this.free.trigger(triggerData);
+				this.fsm.triggerFeature({
+					type: this.free.name,
 					data: triggerResult
 				});
 				featureTriggered = true;
@@ -340,6 +369,26 @@ export class GameEngine extends EventBus {
 						}
 					}
 					
+					// Re-evaluate with the modified grid
+					evaln = this.math.evaluateWays(grid);
+				}
+			} else if (featureType === "FREE_GAMES") {
+				// Force the grid to have enough scatters to trigger free games
+				const triggerScatters = this.config.freeGames.triggerScatters;
+				const currentScatters = evaln.scatters;
+				if (currentScatters < triggerScatters) {
+					const need = triggerScatters - currentScatters;
+					let added = 0;
+					for (let reel = 0; reel < this.config.grid.reels && added < need; reel++) {
+						for (let row = 0; row < this.config.grid.rows && added < need; row++) {
+							const currentSymbol = grid[reel][row];
+							// Avoid replacing ORB or WILD to keep other features natural
+							if (currentSymbol !== "SCATTER" && currentSymbol !== "ORB" && currentSymbol !== "WILD") {
+								grid[reel][row] = "SCATTER";
+								added++;
+							}
+						}
+					}
 					// Re-evaluate with the modified grid
 					evaln = this.math.evaluateWays(grid);
 				}
