@@ -1,7 +1,6 @@
-import { Container, Sprite, Texture, Graphics, Rectangle } from "pixi.js";
+import { Container, Sprite, Texture } from "pixi.js";
 import { Rumble } from "./effects/Rumble.js";
 import { SparkleEmitter } from "./effects/SparkleEmitter.js";
-import orbSheetUrl from "../assets/orb_meter.png?url";
 
 export class OrbMeter {
   constructor(app, hostStage, x, y) {
@@ -21,6 +20,8 @@ export class OrbMeter {
     this.progress01 = 0;
     this.frames = [];
     this.currentFrameIndex = 0;
+    this._spinsPerFrame = 100;
+    this._spinCounter = 0;
 
     this._boundUpdate = (delta) => {
       const dtMs = (typeof delta === "number" ? delta : delta?.deltaMS) || 16.7;
@@ -34,58 +35,40 @@ export class OrbMeter {
 
   async _load() {
     try {
-      console.log("[OrbMeter] Loading spritesheet from:", orbSheetUrl);
-      console.log("[OrbMeter] Resolved URL type:", typeof orbSheetUrl, orbSheetUrl);
-      
-      // Use the working image element approach
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      
-      this.ready = new Promise((resolve, reject) => {
-        img.onload = () => {
-          console.log("[OrbMeter] Image loaded, creating texture and frames");
-          
-          const tex = Texture.from(img);
-          const w = tex.width;
-          const h = tex.height;
-          
-          // Create 3x3 spritesheet frames
-          const cols = 3;
-          const rows = 3;
-          const cellW = Math.floor(w / cols);
-          const cellH = Math.floor(h / rows);
+      // Eagerly collect all progress frame images as URLs (Vite import glob)
+      const progressUrls = import.meta.glob("../assets/progress*.png", { eager: true, as: "url" });
+      const entries = Object.keys(progressUrls).map((p) => {
+        const m = p.match(/progress(\d+)\.png$/);
+        return { path: p, url: progressUrls[p], index: m ? parseInt(m[1], 10) : 0 };
+      }).filter(e => !!e.url);
 
-          const frames = [];
-          for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < cols; c++) {
-              const rect = new Rectangle(c * cellW, r * cellH, cellW, cellH);
-              const frameTexture = new Texture({
-                source: tex.source,
-                frame: rect
-              });
-              frames.push(frameTexture);
-            }
-          }
+      if (entries.length === 0) {
+        console.warn("[OrbMeter] No progress frames found (assets/progress*.png). Meter hidden.");
+        this.container.visible = false;
+        return;
+      }
 
-          this.frames = frames;
-          this.sprite.texture = frames[0];
-          this.sprite.visible = true;
-          
-          console.log(`[OrbMeter] Loaded ${frames.length} frames (${cellW}x${cellH} each)`);
-          resolve();
-        };
-        
-        img.onerror = (err) => {
-          console.error("[OrbMeter] Failed to load image:", err);
-          reject(err);
-        };
+      // Sort by numeric suffix so adding progress5.png, progress6.png, ... just works
+      entries.sort((a, b) => a.index - b.index);
+
+      // Load images to ensure textures are ready
+      const loadImage = (url) => new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = (e) => reject(e);
+        img.src = url;
       });
-      
-      img.src = orbSheetUrl;
-      await this.ready;
-      
+
+      const images = await Promise.all(entries.map(e => loadImage(e.url)));
+      const frames = images.map(img => Texture.from(img));
+
+      this.frames = frames;
+      this.sprite.texture = frames[0];
+      this.sprite.visible = true;
     } catch (err) {
-      console.error("[OrbMeter] Failed to load orb spritesheet:", err);
+      console.error("[OrbMeter] Failed to load progress frames:", err);
+      this.container.visible = false;
     }
   }
 
@@ -109,6 +92,39 @@ export class OrbMeter {
     }
   }
 
+  // Advance the meter by one spin. Every _spinsPerFrame spins, advance a frame.
+  // When at the max frame, keep triggering effects every multiple of _spinsPerFrame.
+  tickSpin() {
+    if (!this.frames || this.frames.length === 0) return;
+    this._spinCounter += 1;
+
+    const maxIndex = this.frames.length - 1;
+    const newIndex = Math.min(maxIndex, Math.floor(this._spinCounter / this._spinsPerFrame));
+
+    if (newIndex > this.currentFrameIndex) {
+      this.currentFrameIndex = newIndex;
+      this.sprite.texture = this.frames[this.currentFrameIndex];
+      this._triggerProgressEffects(this.currentFrameIndex);
+    } else if (this._spinCounter % this._spinsPerFrame === 0) {
+      // At cap (or same frame), still fire effects every block of spins
+      this._triggerProgressEffects(this.currentFrameIndex);
+    }
+  }
+
+  setSpinsPerFrame(n) {
+    const v = Math.max(1, Math.floor(n || 100));
+    this._spinsPerFrame = v;
+  }
+
+  // Reset to the first frame (progress1) and clear spin counter
+  resetProgress() {
+    this._spinCounter = 0;
+    this.currentFrameIndex = 0;
+    if (this.frames && this.frames.length > 0) {
+      this.sprite.texture = this.frames[0];
+    }
+  }
+
   _triggerProgressEffects(frameIndex) {
     // Get sprite center for particle effects
     const cx = (this.sprite.width / 2) | 0;
@@ -123,11 +139,7 @@ export class OrbMeter {
     const rumbleDuration = 200 + (frameIndex * 50);
     this.rumble.start(rumbleIntensity, rumbleDuration);
     
-    console.log(`[OrbMeter] Frame ${frameIndex}: ${sparkCount} sparkles, rumble ${rumbleIntensity}/${rumbleDuration}ms`);
-  }
-
-  advanceBy(amount01) {
-    this.setProgress01(this.progress01 + amount01);
+    // Debug logging removed for cleanliness
   }
 
   triggerTransition() {

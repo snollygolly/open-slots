@@ -201,15 +201,17 @@ export class PixiGame {
 			const finalY = Math.max(8, this.offsetY - finalHeight - 8);
 			this.orbMeter.container.position.set(centerX, finalY);
 			
-			// Set initial progress based on starting spin count
-			this.orbMeter.setProgress01(this._orbProgress);
+			// Ensure meter starts at first frame
+			if (typeof this.orbMeter.resetProgress === 'function') {
+				this.orbMeter.resetProgress();
+			}
 		});
 		this.layers.ui.addChild(this.orbMeter.container);
 
-		// Track spins since last ORB feature to drive the meter
-		this._orbEstimatedSpinsToTrigger = 50;
-		this._spinsSinceLastOrb = 8;
-		this._orbProgress = this._spinsSinceLastOrb / this._orbEstimatedSpinsToTrigger;
+		// Deprecated float progress tracking (replaced by discrete frame ticks)
+		this._orbEstimatedSpinsToTrigger = 100;
+		this._spinsSinceLastOrb = 0;
+		this._orbProgress = 0;
 
 		// Free games tracking
 		this._freeGamesRemaining = 0;
@@ -372,11 +374,8 @@ export class PixiGame {
 				this.holdSpinText.text = `${orbCount} Orbs | ${respinsRemaining} Respins`;
 				this.holdSpinText.visible = true;
 				
-				// Trigger meter animation 
+				// Trigger meter animation (no reset; reset happens when feature ends)
 				this.orbMeter.triggerTransition();
-				this._spinsSinceLastOrb = 0;
-				this._orbProgress = 0;
-				this.orbMeter.setProgress01(0);
 				
 				console.log(`[PixiGame] Natural Hold and Spin triggered: ${orbCount} orbs, ${respinsRemaining} respins`);
 				console.log(`[PixiGame] holdSpinText visible: ${this.holdSpinText.visible}, text: "${this.holdSpinText.text}"`);
@@ -397,6 +396,10 @@ export class PixiGame {
 			this.holdSpinText.visible = false;
 			console.log(`[PixiGame] Hold and Spin ended, hiding status text`);
 			this._clearHoldLockedOverlays();
+			// Reset meter back to first frame after feature ends
+			if (typeof this.orbMeter.resetProgress === 'function') {
+				this.orbMeter.resetProgress();
+			}
 		}
 	}
 
@@ -532,11 +535,9 @@ export class PixiGame {
 		// Apply win credits and emit PAYING event (if wins exist)
 		this.engine.applyWinCredits(result);
 
-		// Update orb meter (simple meter progression)
+		// Update orb meter: advance one frame every N spins during base game
 		if (this._freeGamesRemaining === 0 && !result.holdAndSpin?.active) {
-			this._spinsSinceLastOrb++;
-			this._orbProgress = Math.min(1, this._spinsSinceLastOrb / this._orbEstimatedSpinsToTrigger);
-			this.orbMeter.setProgress01(this._orbProgress);
+			if (typeof this.orbMeter.tickSpin === 'function') { this.orbMeter.tickSpin(); }
 		}
 
 		return result;
@@ -761,9 +762,6 @@ export class PixiGame {
     if (result.feature === "HOLD_AND_SPIN_START" || (result.feature && result.feature.includes("HOLD_AND_SPIN"))) {
         // Hold and spin starting - trigger meter animation
         this.orbMeter.triggerTransition();
-        this._spinsSinceLastOrb = 0;
-        this._orbProgress = 0;
-        this.orbMeter.setProgress01(0);
         
         console.log(`[PixiGame] Hold and Spin feature started`);
     }
