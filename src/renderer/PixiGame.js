@@ -219,6 +219,11 @@ export class PixiGame {
 		// Free Games cumulative win tracking for persistent Win label during feature
 		this._freeGamesActive = false;
 		this._freeGamesCumulativeWin = 0;
+		// Defer UI for Free Games start until reels finish
+		this._freeGamesUIActivated = false;
+		this._pendingFreeGamesStart = null;
+		// Latch when Free Games ends so UI can persist until next spin
+		this._freeGamesEndedAwaitingSpin = false;
 
 		// Blue particle emitter for free games
 		const reelsCenterX = this.offsetX + (this.cellW * this.cols) / 2;
@@ -317,6 +322,17 @@ export class PixiGame {
 	}
 
 	onSpinStart() {
+		// If Free Games ended last spin, hide the label now on new spin
+		if (this._freeGamesEndedAwaitingSpin) {
+			this.freeGamesText.visible = false;
+			this._freeGamesUIActivated = false;
+			this._freeGamesEndedAwaitingSpin = false;
+			this._freeGamesRemaining = 0;
+			this._totalFreeGames = 0;
+			this._currentFreeGame = 0;
+			// Also reset Win label immediately at spin request
+			this.winText.text = "";
+		}
 		this.highlighter.reset();
 		// Always rebuild overlays; if feature inactive, this clears any stale locks
 		this._rebuildHoldLockedOverlays();
@@ -407,49 +423,51 @@ export class PixiGame {
 	}
 
 	onSpinEnd() {
-		// Spin completed
+		// Spin completed; if Free Games ended this spin, drop active flag now
+		if (this._freeGamesEndedAwaitingSpin) {
+			this._freeGamesActive = false;
+		}
 	}
 
-onFreeGamesStart(data) {
-		this._freeGamesRemaining = data.totalSpins || data.spinsAdded;
-		this._totalFreeGames = data.totalSpins || data.spinsAdded;
+	onFreeGamesStart(data) {
+		// If we're already active (retrigger inside feature), update immediately
+		if (this._freeGamesActive && this._freeGamesUIActivated) {
+			this._freeGamesRemaining = data.totalSpins || data.spinsAdded || this._freeGamesRemaining;
+			this._totalFreeGames = data.totalSpins || data.spinsAdded || this._totalFreeGames;
+			// Small celebratory burst for retrigger
+			this.freeGamesEmitter.container.visible = true;
+			this.freeGamesEmitter.burst({ x: 0, y: 0, count: 50 });
+			setTimeout(() => { this.freeGamesEmitter.container.visible = false; }, 2000);
+			// Keep UI visible and let onFreeGamesChange adjust the counter text
+			return;
+		}
+
+		// Otherwise, defer the UI until the reels finish stopping
+		this._pendingFreeGamesStart = { ...data };
+		// Preload counters; onFreeGamesChange will refine before activation
+		this._freeGamesRemaining = data.totalSpins || data.spinsAdded || this._freeGamesRemaining;
+		this._totalFreeGames = data.totalSpins || data.spinsAdded || this._totalFreeGames;
 		this._currentFreeGame = 0;
-
-    // Activate persistent win label and reset cumulative total unless this is a retrigger
-    this._freeGamesActive = true;
-    if (!data?.isRetrigger) {
-        this._freeGamesCumulativeWin = 0;
-    }
-
-    // Trigger particle effect
-    this.freeGamesEmitter.container.visible = true;
-		this.freeGamesEmitter.burst({ x: 0, y: 0, count: 50 });
-		setTimeout(() => {
-			this.freeGamesEmitter.container.visible = false;
-		}, 2000);
-
-    // Immediately show free games status text
-    this.freeGamesText.text = `0/${this._totalFreeGames} Free Games`;
-    this.freeGamesText.visible = true;
-    // Show persistent cumulative win label during free games
-    this.winText.text = `Win ${this._freeGamesCumulativeWin}`;
-}
+	}
 
 	onFreeGamesChange(data) {
 		this._freeGamesRemaining = data.remaining;
 		this._currentFreeGame = this._totalFreeGames - this._freeGamesRemaining;
+		// Update the text but only reveal if we've activated UI
 		this.freeGamesText.text = `${this._currentFreeGame}/${this._totalFreeGames} Free Games`;
-		this.freeGamesText.visible = this._freeGamesRemaining > 0;
+		// Keep visible through 0/Total; hide on next spin start
+		this.freeGamesText.visible = this._freeGamesUIActivated;
 	}
 
-onFreeGamesEnd() {
-    this.freeGamesText.visible = false;
-    this._freeGamesRemaining = 0;
-    this._totalFreeGames = 0;
-    this._currentFreeGame = 0;
-    // Feature ended — revert to normal win label behavior on next spin
-    this._freeGamesActive = false;
-}
+	onFreeGamesEnd() {
+		// Latch end-of-feature but keep 8/8 visible until the next spin
+		this._freeGamesEndedAwaitingSpin = true;
+		this._freeGamesRemaining = 0;
+		this._currentFreeGame = this._totalFreeGames;
+		this.freeGamesText.text = `${this._currentFreeGame}/${this._totalFreeGames} Free Games`;
+		this.freeGamesText.visible = true;
+		// Do not flip _freeGamesActive yet; keep it true so final PAYING adds to cumulative
+	}
 
 	renderSpinResult(result, showWins = false) {
 		// Render the grid result with orb item data
@@ -480,7 +498,7 @@ onFreeGamesEnd() {
 		}
 	}
 
-    async spinAndRender() {
+	async spinAndRender() {
         // If Hold & Spin is active, spend a respin immediately on click
         if (this.engine.holdSpin?.isActive?.() && typeof this.engine.holdSpin.spendRespin === 'function') {
             this.engine.holdSpin.spendRespin();
@@ -503,6 +521,9 @@ onFreeGamesEnd() {
         // Animation only - no game logic, no wins shown yet
         await this.animateReels(result);
 
+        // If Free Games just triggered, activate its UI now that reels have stopped
+        this._maybeActivateFreeGamesUI();
+
         // Orb values are now permanent - no overlay management needed
 
 		// After animation completes, now show the results and apply win credits
@@ -522,6 +543,14 @@ onFreeGamesEnd() {
 	}
 
 	prepareForSpin() {
+		// If the last spin concluded Free Games, clear its UI immediately on click
+		if (this._freeGamesEndedAwaitingSpin) {
+			this.freeGamesText.visible = false;
+			this._freeGamesUIActivated = false;
+			// Also clear the Win label immediately on click
+			this.winText.text = "";
+			// Do not reset the latch here; onSpinStart will finalize state
+		}
 		this.highlighter.reset();
 		// Sync overlays with feature state before any reels move
 		const isHSActive = !!(this.engine.holdSpin?.isActive?.());
@@ -717,6 +746,9 @@ onFreeGamesEnd() {
 		await Promise.all(tasks);
 
 		// After animation completes, render the spin results and show wins
+		// If Free Games was just triggered, activate its UI now
+		this._maybeActivateFreeGamesUI();
+
 		this.renderSpinResult(result, true); // true = show wins
 
 		// Debug: log what features we're seeing
@@ -754,6 +786,28 @@ onFreeGamesEnd() {
 		this.engine.applyWinCredits(result);
 
 		return result;
+	}
+
+	_maybeActivateFreeGamesUI() {
+		if (!this._pendingFreeGamesStart || this._freeGamesUIActivated) { return; }
+		const data = this._pendingFreeGamesStart;
+		this._pendingFreeGamesStart = null;
+		// Activate persistent win label and reset cumulative total unless this is a retrigger
+		this._freeGamesActive = true;
+		if (!data?.isRetrigger) {
+			this._freeGamesCumulativeWin = 0;
+		}
+		// Trigger particle effect now that reels are stopped
+		this.freeGamesEmitter.container.visible = true;
+		this.freeGamesEmitter.burst({ x: 0, y: 0, count: 50 });
+		setTimeout(() => { this.freeGamesEmitter.container.visible = false; }, 2000);
+		// Show status text with the most up-to-date counters
+		this._currentFreeGame = Math.max(0, this._totalFreeGames - this._freeGamesRemaining);
+		this.freeGamesText.text = `${this._currentFreeGame}/${this._totalFreeGames} Free Games`;
+		this.freeGamesText.visible = true;
+		// Show persistent cumulative win label during free games
+		this.winText.text = `Win ${this._freeGamesCumulativeWin}`;
+		this._freeGamesUIActivated = true;
 	}
 
 	_handleFreeGamesStart(result) {
