@@ -17,7 +17,7 @@ export class GameMath {
 		}
 		return out;
 	}
-	evaluateWays(matrix) {
+		evaluateWays(matrix) {
 		const { symbols, paytable, grid } = this.config;
 		const W = symbols.WILD;
 		const SC = symbols.SCATTER;
@@ -75,7 +75,10 @@ export class GameMath {
 				ways *= hits;
 			}
 			if (count >= 3) {
-				const award = paytable[sym][count] || 0;
+				// Paytable arrays are indexed 0..4 for 1..5 of-a-kind. Use (count - 1).
+				const base = paytable[sym][count - 1] || 0;
+				// Ways pays: multiply the base award by the number of ways.
+				const award = base * ways;
 				if (award > 0) { win += award; detail.push({ sym, count, award, ways }); }
 			}
 		}
