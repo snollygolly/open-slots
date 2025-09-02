@@ -58,7 +58,7 @@ export class HoldAndSpin extends BaseFeature {
 		return this.respinsRemaining;
 	}
 
-	processRespin(respinGrid) {
+	processRespin(respinGrid, orbItems = []) {
 		if (!this.isActive()) return 0;
 
 		// Count new orbs that weren't previously locked
@@ -69,15 +69,26 @@ export class HoldAndSpin extends BaseFeature {
 				if (respinGrid[reel][row] === "ORB" && !this.lockedPositions.has(positionKey)) {
 					// This is a new orb - lock it
 					this.lockedPositions.add(positionKey);
-					// Chance for jackpot (not GRAND), else credit value
-					if (this.rng() < (this.cfg.jackpotChancesPerOrb || 0)) {
-						const ids = Object.keys(this.cfg.jackpotWeights || {});
-						const weights = ids.map((k) => this.cfg.jackpotWeights[k]);
-						const id = pickWeighted(this.rng, ids, weights);
-						this.lockedOrbs.push({ type: "JP", id, reel, row });
+					// Use precomputed orb item for consistency with reel visuals, fallback to RNG if missing
+					let chosen = null;
+					if (Array.isArray(orbItems) && orbItems.length) {
+						chosen = orbItems.find((it) => it && it.x === reel && it.y === row) || null;
+					}
+					if (chosen && chosen.type === "JP") {
+						this.lockedOrbs.push({ type: "JP", id: chosen.id, reel, row });
+					} else if (chosen && chosen.type === "C") {
+						this.lockedOrbs.push({ type: "C", amount: chosen.amount, reel, row });
 					} else {
-						const creditValue = pickWeighted(this.rng, this.cfg.creditValues, this.cfg.creditWeights);
-						this.lockedOrbs.push({ type: "C", amount: creditValue, reel, row });
+						// Fallback to original RNG assignment
+						if (this.rng() < (this.cfg.jackpotChancesPerOrb || 0)) {
+							const ids = Object.keys(this.cfg.jackpotWeights || {});
+							const weights = ids.map((k) => this.cfg.jackpotWeights[k]);
+							const id = pickWeighted(this.rng, ids, weights);
+							this.lockedOrbs.push({ type: "JP", id, reel, row });
+						} else {
+							const creditValue = pickWeighted(this.rng, this.cfg.creditValues, this.cfg.creditWeights);
+							this.lockedOrbs.push({ type: "C", amount: creditValue, reel, row });
+						}
 					}
 					newOrbCount++;
 				}
@@ -188,7 +199,7 @@ export class HoldAndSpin extends BaseFeature {
 			return { completed: true, totalWin: 0, continueSpin: false, data: {} };
 		}
 
-		const result = this.processRespin(spinResult.grid);
+		const result = this.processRespin(spinResult.grid, spinResult.evaln?.orbItems || []);
 		
 		if (result) {
 			// Feature completed
