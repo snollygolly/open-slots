@@ -84,7 +84,9 @@ export class Controls {
 				
 				if (r.feature === "FREE_GAMES_TRIGGER") {
 					freeGamesTriggers += 1;
-					totalFreeGamesPlayed += this.engine.config.freeGames.spins;
+					// Use simulated total (includes retriggers) if provided
+					const played = r.sim?.freeGamesPlayed || this.engine.config.freeGames.spins;
+					totalFreeGamesPlayed += played;
 				}
 				
 				if (r.feature === "HOLD_AND_SPIN") {
@@ -94,6 +96,12 @@ export class Controls {
 							jackpotHits[jp] = (jackpotHits[jp] || 0) + r.hold.jackpots[jp];
 						});
 					}
+				}
+				// Also aggregate jackpots that occurred inside free games
+				if (r.sim?.jackpots) {
+					Object.keys(r.sim.jackpots).forEach(jp => {
+						jackpotHits[jp] = (jackpotHits[jp] || 0) + r.sim.jackpots[jp];
+					});
 				}
 			}
 			

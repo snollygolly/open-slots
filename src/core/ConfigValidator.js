@@ -223,9 +223,7 @@ export class ConfigValidator {
 			this.errors.push("Free games triggerScatters must be a positive number");
 		}
 
-		if (typeof freeGames.multiplier !== "number" || freeGames.multiplier < 1) {
-			this.errors.push("Free games multiplier must be >= 1");
-		}
+		// Multiplier is not used
 	}
 
 	/**

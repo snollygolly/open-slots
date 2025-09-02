@@ -52,7 +52,6 @@ export const defaultConfig = {
 		triggerScatters: 3,
 		spins: 8,
 		retrigger: 5,
-		multiplier: 2,
 		extraWildChance: 0.15
 	},
 	progressives: {
