@@ -5,8 +5,7 @@
 	"scripts": {
 		"dev": "vite",
 		"build": "vite build",
-		"preview": "vite preview",
-		"sim": "node ./src/sim/run-sim.js"
+		"preview": "vite preview"
 	},
 	"dependencies": {
 		"@pixi/assets": "^7.4.3",

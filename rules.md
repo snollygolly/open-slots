@@ -1,102 +1,96 @@
-# 🎰 Open Slots — Game Rules
+# 🎰 Open Slots — Player Guide & Rules
 
-Welcome to **Open Slots**!  
-This document explains how to play, how wins are scored, and what features you can trigger while spinning.
+Welcome to Open Slots. This guide matches the current UI, symbols, and the features implemented in the game.
 
 ---
 
-## 🎮 How to Play
+## 🎮 UI & Basic Play
 
-1. **Set your bet**  
-   - Your current **credits** are shown in the HUD at the bottom.  
-   - Each spin costs the **bet amount** shown.
-
-2. **Spin the reels**  
-   - Click **SPIN** to play one round.  
-   - Click **AUTO** to spin continuously until stopped.  
-   - Click **Sim 1k** to simulate 1,000 spins instantly (useful for testing math).
-
-3. **Read results**  
-   - Any winnings from the spin are shown as **Last Win** in the HUD.  
-   - Winning lines are highlighted on the reels.  
-   - Details of each winning line appear in the log at the bottom.
+- Credit: your current balance (in credits).
+- Bet: the amount wagered on a base spin.
+- Buttons:
+  - SPIN: play one spin at the current bet.
+  - Buy Hold & Spin (10k): immediately triggers Hold & Spin for 10,000 credits.
+  - Buy Free Games (10k): immediately triggers Free Games for 10,000 credits.
+  - Sim 1k: runs a 1,000‑spin simulation and prints a summary in the results log (no effect on credits).
+- Results panel:
+  - Last Win: most recent total win (in credits).
+  - Win Log: shows per‑spin win details and Sim 1k summaries.
+  - Meters (top): progressive jackpot values (Mini, Minor, Maxi, Major, Grand).
 
 ---
 
 ## 🎲 Reels & Symbols
 
-- The game uses **5 reels × 3 rows** (5×3 grid).
-- Each reel contains a mix of **high** and **low** symbols:
-
-| Symbol   | Color     | Role |
-|----------|-----------|------|
-| **WILD** | Gold      | Substitutes for any standard symbol |
-| **SCATTER** | Blue   | Triggers Free Games feature |
-| **ORB**  | Red       | Triggers Hold & Spin feature |
-| **A, K, Q, J, T** | White/Grey tones | Standard low symbols |
-| **Lantern, Coins, Cowboy** | Themed symbols | Standard high symbols |
+- Grid: 5 reels × 3 rows (5×3), using 243‑ways pays.
+- Special symbols:
+  - WILD: substitutes for standard symbols to complete ways.
+  - SCATTER: 3+ triggers Free Games.
+  - ORB: 5+ triggers Hold & Spin.
+- Standard symbols:
+  - High: LANTERN, LILY, FROG, GATOR
+  - Low: A, K, Q, J, T
 
 ---
 
-## 💰 Ways to Win
+## 💰 Ways to Win (243 Ways)
 
-- The game uses a **“243 Ways”** system (not fixed paylines).  
-- A win occurs when **3 or more matching symbols** appear **left-to-right on consecutive reels**, starting from Reel 1.  
-- **WILD** symbols can substitute to complete a winning way.  
-- Multiple ways of the same symbol in a spin are added together.
+- Wins occur when 3 or more matching symbols land on consecutive reels starting from reel 1.
+- Any row positions count; multiple ways for the same symbol are summed.
+- WILD substitutes for standard symbols.
 
-Example:  
-- `K K K` across reels 1–3 in any row positions = a win.  
-- `K + WILD + K` across reels 1–3 = also a win.
+Example:
+- K on reels 1–3 (any rows) = a win.
+- K + WILD + K on reels 1–3 also = a win.
 
 ---
 
 ## ⭐ Features
 
-### Free Games (Triggered by SCATTER)
-- **3+ SCATTER** symbols anywhere trigger Free Games.  
-- A set number of free spins are awarded.  
-- During Free Games, reels spin without deducting credits, but wins still add to your balance.
+### Free Games (SCATTER)
+- Trigger: 3 or more SCATTER symbols anywhere.
+- Award: 8 free spins. Retrigger adds 5 more.
+- During Free Games: spins do not deduct your bet; wins still credit to your balance.
+- The on‑screen “Win” label shows a running total for the current Free Games session.
 
-### Hold & Spin (Triggered by ORB)
-- **6+ ORB** symbols in view trigger Hold & Spin.  
-- ORBs lock in place and award 3 respins.  
-- Each new ORB resets the respin counter.  
-- The feature ends when spins run out or the grid fills.  
-- Payout is the sum of all ORB values collected.
+### Hold & Spin (ORB)
+- Trigger: 5 or more ORB symbols in view in a base spin.
+- Start with 3 respins. All ORBs lock in place.
+- Each new ORB resets the respin counter back to 3 and also locks.
+- Some ORBs carry fixed credit values; some carry jackpot labels (MINI, MINOR, MAXI, MAJOR).
+- Filling the entire 5×3 grid during the feature also awards the GRAND jackpot.
+- Payout at the end = sum of all locked ORB credit values + any jackpots awarded.
+- The on‑screen “Win” label shows the live total of locked values during the feature.
 
-### Progressive Jackpots
-- Certain special symbols contribute to progressive meters:  
-  - **Mini, Minor, Maxi, Major, Grand**.  
-- When triggered, the corresponding jackpot is awarded and the meter resets.
-
----
-
-## 📊 Progressive Meters
-
-At the bottom of the HUD, you’ll see jackpot values:
-- **Mini** (lowest tier)
-- **Minor**
-- **Maxi**
-- **Major**
-- **Grand** (top prize)
-
-Progressive values increase slightly with each bet placed.  
-When a jackpot is won, its value resets to the seed amount.
+### Feature Buy
+- Buy Hold & Spin (10k): deducts 10,000 credits and forces Hold & Spin to start on the next spin (the spin itself doesn’t deduct a base bet).
+- Buy Free Games (10k): deducts 10,000 credits and starts an 8‑spin Free Games session (retrigger still awards +5).
 
 ---
 
-## 🏆 Scoring & Payouts
+## 📊 Progressive Jackpots
 
-- **Line Wins**: Sum of all valid ways wins from standard symbols.  
-- **Feature Wins**: Added immediately to your balance at the end of Free Games or Hold & Spin.  
-- **Jackpots**: Paid immediately when triggered.  
-- **Total Win**: All line + feature + jackpot wins combined, displayed after each spin.
+- Tiers: Mini, Minor, Maxi, Major, Grand (shown at the top).
+- Jackpots increase slightly with base spins. When a jackpot is won, its meter resets to its seed value.
+- Jackpots are awarded by special ORBs during Hold & Spin; GRAND is awarded only by filling the entire grid during Hold & Spin.
+- Display: meters show dollar‑style values; wins and balance display in credits.
+
+---
+
+## 🧪 Simulation (Sim 1k)
+
+- Runs 1,000 virtual spins and prints a one‑line summary (RTP, hit rate, feature triggers, jackpots) at the top of the Win Log.
+- Simulation does not change your credits or meters.
+
+---
+
+## 💾 Persistence
+
+- Your credits and progressive meter balances are saved locally between sessions.
 
 ---
 
 ## ℹ️ Notes
 
-- This is a **demo / learning project**, not a real money game.  
-- The math model, features, and art are subject to change as the project evolves.  
-- Use **Sim 1k** if you want to quickly test probabilities and payouts.
+- This is a demo/learning project; values and visuals may change.
+- There is no real‑money play.

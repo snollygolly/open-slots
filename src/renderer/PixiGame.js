@@ -318,8 +318,8 @@ export class PixiGame {
 
 	onSpinStart() {
 		this.highlighter.reset();
-		
-		// Orb values are now built into symbols - no separate labels to clear
+		// Always rebuild overlays; if feature inactive, this clears any stale locks
+		this._rebuildHoldLockedOverlays();
 		
 		// Clear win text unless we're in an active Hold & Spin OR Free Games feature
 		if (!this.engine.holdSpin?.isActive?.() && !this._freeGamesActive) {
@@ -331,8 +331,6 @@ export class PixiGame {
 			this.holdSpinText.text = `${orbCount} Orbs | ${respinsRemaining} Respins`;
 			this.holdSpinText.visible = true;
 			this._updateHoldWinText();
-			// Ensure locked overlays are present over the spinning reels
-			this._rebuildHoldLockedOverlays();
 		}
 	}
 
@@ -525,8 +523,24 @@ onFreeGamesEnd() {
 
 	prepareForSpin() {
 		this.highlighter.reset();
-		
-		// Orb values are now built into symbols - no separate labels to clear
+		// Sync overlays with feature state before any reels move
+		const isHSActive = !!(this.engine.holdSpin?.isActive?.());
+		const hsRespins = typeof this.engine.holdSpin?.getRemainingRespins === 'function'
+			? (this.engine.holdSpin.getRemainingRespins() || 0)
+			: 0;
+		if (!isHSActive || hsRespins <= 0) {
+			// Feature not active or has no respins left — ensure overlays and status are cleared
+			this._clearHoldLockedOverlays();
+			this.holdSpinText.visible = false;
+			// Defensive: if engine state lingers, reset it here
+			if (this.engine.holdSpin && !isHSActive && typeof this.engine.holdSpin.reset === 'function') {
+				this.engine.holdSpin.reset();
+			}
+		} else {
+			// Active feature — keep overlays on
+			this._rebuildHoldLockedOverlays();
+		}
+		// Orb values are built into symbols - no separate labels to clear
 		
 		// Clear win text unless we're in an active Hold & Spin OR Free Games feature
 		if (!this.engine.holdSpin?.isActive?.() && !this._freeGamesActive) {
